@@ -1,0 +1,21 @@
+[project]
+name = "quantdb"
+version = "0.1.0"
+description = "A local quant data store: one place for every dataset the research programs need, refreshed incrementally, read as DataFrames."
+requires-python = ">=3.11"
+dependencies = ["duckdb>=1.0", "pandas>=2.0", "pyarrow>=15", "requests>=2.31"]
+
+[project.optional-dependencies]
+cn = ["tushare>=1.4", "baostock>=0.8", "akshare>=1.15"]
+openbb = ["openbb>=4.3"]   # the OpenBB Platform adapter (US equities); install in quantdb's own venv, it pins fastapi
+dev = ["pytest>=8"]
+
+[project.scripts]
+quantdb = "quantdb.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["quantdb*"]

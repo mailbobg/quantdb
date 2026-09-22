@@ -1,0 +1,84 @@
+"""quantdb command line.
+
+    quantdb status                        what is stored
+    quantdb tables                        what is registered
+    quantdb refresh cn.moneyflow [--start 2020-01-01] [--limit 50] [--source tushare]
+    quantdb refresh --namespace cn
+    quantdb sql "select count(*) from cn.margin"
+    quantdb import-legacy TABLE PATH ...  load an existing CSV/parquet/pickle cache into a table
+    quantdb import-studio ROOT            load RD-Agent Studio's extra/ cache (tushare + baostock)
+    quantdb forget cn.fina 20250630       re-fetch a key next refresh
+"""
+import argparse
+import sys
+
+import pandas as pd
+
+from . import schema
+from .recorders import Recorder
+from .store import Store
+
+
+def _report(event):
+    kind = event.get("event")
+    if kind == "plan":
+        print(f"{event['table']}: {event['keys']} keys via {'/'.join(event['sources'])}", flush=True)
+    elif kind == "key" and (event["i"] % 20 == 0 or event["i"] == event["n"]):
+        print(f"  {event['i']}/{event['n']} {event['key']} {event['rows']} rows ({event['source']})", flush=True)
+    elif kind == "fail":
+        print(f"  FAIL {event['key']}: {event['error']}", file=sys.stderr, flush=True)
+    elif kind == "end":
+        print(f"{event['table']}: {event['done']} keys, {event['rows']} rows, {len(event['failed'])} failed", flush=True)
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="quantdb", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--home", help="store root (default $QUANTDB_HOME or ~/.quantdb)")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("status")
+    sub.add_parser("tables")
+    r = sub.add_parser("refresh"); r.add_argument("table", nargs="?"); r.add_argument("--namespace"); r.add_argument("--start"); r.add_argument("--end")
+    r.add_argument("--limit", type=int); r.add_argument("--source", action="append"); r.add_argument("--symbols", help="comma-separated")
+    q = sub.add_parser("sql"); q.add_argument("query")
+    i = sub.add_parser("import-legacy"); i.add_argument("table"); i.add_argument("paths", nargs="+"); i.add_argument("--source", default="legacy")
+    i.add_argument("--date-col", default="date"); i.add_argument("--symbol-col", default="symbol"); i.add_argument("--done", help="mark these keys done: 'from-dates' or comma list")
+    st = sub.add_parser("import-studio", help="load RD-Agent Studio's extra/ cache (tushare + baostock)"); st.add_argument("root")
+    f = sub.add_parser("forget"); f.add_argument("table"); f.add_argument("keys", nargs="+")
+    a = p.parse_args(argv)
+    store = Store(a.home)
+    pd.set_option("display.width", 200); pd.set_option("display.max_columns", 30); pd.set_option("display.max_rows", 200)
+
+    if a.cmd == "status":
+        print(store.status().to_string(index=False) if store.tables() else f"empty store at {store.root}")
+    elif a.cmd == "tables":
+        rows = [{"table": t.name, "key": t.key, "sources": "/".join(t.sources), "description": t.description} for t in schema.TABLES.values()]
+        print(pd.DataFrame(rows).to_string(index=False))
+    elif a.cmd == "refresh":
+        rec = Recorder(store, report=_report)
+        kw = {"start": a.start, "end": a.end, "limit": a.limit, "sources": a.source, "symbols": a.symbols.split(",") if a.symbols else None}
+        if a.table:
+            rec.refresh(a.table, **kw)
+        else:
+            rec.refresh_all(namespace=a.namespace, **kw)
+    elif a.cmd == "sql":
+        print(store.sql(a.query).to_string(index=False))
+    elif a.cmd == "import-legacy":
+        from .legacy import import_files
+
+        record = import_files(store, a.table, a.paths, date_col=a.date_col, symbol_col=a.symbol_col, source=a.source, done=a.done)
+        print(f"{a.table}: {record['rows']} rows, {record['symbols']} symbols, {record['start']}..{record['end']}")
+    elif a.cmd == "import-studio":
+        from .legacy import import_studio_baostock, import_studio_tushare
+        from pathlib import Path
+
+        root = Path(a.root).expanduser()
+        import_studio_tushare(store, root / "tushare")
+        if (root / "baostock").is_dir():
+            import_studio_baostock(store, root / "baostock")
+    elif a.cmd == "forget":
+        store.forget(a.table, a.keys)
+        print("ok")
+
+
+if __name__ == "__main__":
+    main()

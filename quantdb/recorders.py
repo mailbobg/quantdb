@@ -126,6 +126,7 @@ class Recorder:
             record = self.store.meta(name); record["plan_start"] = str(pd.Timestamp(start).date()); self.store._write_meta(name, record)
         done, failed, rows = [], [], 0
         batch, batch_keys = [], []
+        typical = self._typical_rows(table) if table.key == "day" else None
         if workers > 1:
             from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
 
@@ -147,7 +148,7 @@ class Recorder:
                 continue
             if len(frame):
                 batch.append(frame); rows += len(frame)
-            if len(frame) or not self._recent(table, key):  # an empty answer for the last few days may just be unpublished yet
+            if self._complete(table, key, frame, typical):  # recent days may be unpublished or half-published: keep the rows, fetch again next time
                 batch_keys.append(key.split("@")[0] if table.key == "symbol" else key)
             self.report({"table": name, "event": "key", "key": key, "rows": len(frame), "source": used, "i": i, "n": len(keys)})
             if len(batch_keys) >= 50 or i == len(keys):
@@ -165,6 +166,27 @@ class Recorder:
         if table.key not in ("day", "week"):
             return False
         return (pd.Timestamp(date.today()) - pd.Timestamp(key)).days <= days
+
+    def _complete(self, table, key, frame, typical):
+        """Whether a fetched key can be marked done. Old keys always are; a key from the last few days is not
+        when it came back empty or, for day tables, with far fewer rows than a normal day (a source still
+        publishing yesterday), so the next run replaces it."""
+        if not self._recent(table, key):
+            return True
+        if not len(frame):
+            return False
+        if typical and len(frame) < 0.9 * typical:
+            self.report({"table": table.name, "event": "partial", "key": key, "rows": len(frame), "typical": typical})
+            return False
+        return True
+
+    def _typical_rows(self, table):
+        """Median rows per date over the last 20 stored dates, or None when the table is new."""
+        if not self.store.table_path(table.name).is_file():
+            return None
+        ns, short = table.name.split(".", 1)
+        counts = self.store.sql(f'SELECT count(*) AS n FROM "{ns}"."{short}" GROUP BY date ORDER BY date DESC LIMIT 20')
+        return float(counts["n"].median()) if len(counts) >= 5 else None
 
     def _fetch(self, table, names, key, sources=None):
         last = None

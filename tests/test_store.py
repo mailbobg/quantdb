@@ -164,3 +164,19 @@ def test_init_writes_env_from_secrets(tmp_path):
     (store.root / ".env").write_text("DATAHUB_API_KEY=k2\n")
     init(store, str(tmp_path / "old.env"))
     assert "DATAHUB_API_KEY=k2" in (store.root / ".env").read_text()  # existing values win
+
+
+def test_recent_partial_day_is_kept_but_not_done(tmp_path, monkeypatch, registry):
+    from datetime import date
+
+    rec = make_recorder(tmp_path, monkeypatch)
+    today = pd.Timestamp(date.today()).normalize()
+    days = pd.bdate_range(end=today - pd.Timedelta(days=7), periods=8)
+    full = pd.concat([frame([d], [f"S{i}" for i in range(10)]) for d in days])
+    rec.store.upsert("cn.fake_day", full, done=[d.strftime("%Y%m%d") for d in days])
+    yesterday = today - pd.Timedelta(days=1)
+    monkeypatch.setattr(rec, "calendar", lambda table: pd.DatetimeIndex([*days, yesterday]))
+    monkeypatch.setattr(Fake, "fetch", lambda self, table, key: frame([pd.Timestamp(key)], ["S0", "S1"]))  # 2 of a normal 10 rows
+    out = rec.refresh("cn.fake_day")
+    assert out["keys"] == 1 and out["done"] == 0 and len(rec.store.read("cn.fake_day", start=yesterday)) == 2
+    assert yesterday.strftime("%Y%m%d") not in rec.store.meta("cn.fake_day")["done"]

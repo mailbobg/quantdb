@@ -80,3 +80,34 @@ def test_main_server_learns_the_page_size_from_a_400(monkeypatch):
     assert seen == [tr.ROW_CAP, 1000] and len(frame) == 1 and main.limits["stk_holdernumber"] == 1000
     main.query("stk_holdernumber", {"start_date": "20250113"})
     assert seen[-1] == 1000
+
+
+def test_main_server_truncation_is_an_error(monkeypatch):
+    class Reply:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"code": 0, "data": {"fields": ["ts_code", "x"], "items": [["600000.SH", 1]] * 3, "has_more": True, "count": 10}}
+
+        def raise_for_status(self):
+            pass
+
+    class Session:
+        headers = {}
+        calls = 0
+
+        def get(self, url, params, timeout):
+            Session.calls += 1
+            if Session.calls > 1:
+                r = Reply(); r.json = lambda: {"code": 0, "data": {"fields": ["ts_code", "x"], "items": [], "has_more": True, "count": 10}}
+                return r
+            return Reply()
+
+    monkeypatch.setattr(tr.time, "sleep", lambda s: None)
+    main = tr._Main.__new__(tr._Main)
+    main.session, main.base, main.last, main.limits = Session(), "http://x", 0.0, {}
+    import pytest
+
+    with pytest.raises(tr.Truncated):
+        main.query("daily_basic", {"trade_date": "20250102"})

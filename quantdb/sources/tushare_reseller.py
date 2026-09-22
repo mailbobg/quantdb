@@ -33,7 +33,12 @@ DATE_COLUMN = {"day": "trade_date", "period": "end_date"}
 
 
 class Capped(Exception):
-    pass
+    """The mirror answered its row cap: the answer is truncated and only the paging server can complete it."""
+
+
+class Truncated(RuntimeError):
+    """The REST server reported more rows than it returned (its paging returns nothing past the first page), so the
+    key stays unfetched and the next run tries again, mirror first."""
 
 
 class _Mirror:
@@ -90,6 +95,9 @@ class _Main:
             if not data.get("has_more") or not data["items"]:
                 break
             offset += len(data["items"])
+        count = data.get("count")
+        if isinstance(count, int) and count > len(rows):
+            raise Truncated(f"{api} {params}: server holds {count} rows, returned {len(rows)}")
         return pd.DataFrame(rows, columns=fields)
 
 

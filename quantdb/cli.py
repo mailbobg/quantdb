@@ -6,6 +6,7 @@
     quantdb refresh cn.moneyflow [--start 2020-01-01] [--limit 50] [--source tushare]
     quantdb refresh --namespace cn
     quantdb sql "select count(*) from cn.margin"
+    quantdb export-qlib DIR [--start 2015-01-01]  write a Qlib provider directory from cn.daily / cn.adj_factor / cn.index_members
     quantdb import-legacy TABLE PATH ...  load an existing CSV/parquet/pickle cache into a table
     quantdb import-studio ROOT            load RD-Agent Studio's extra/ cache (tushare + baostock)
     quantdb forget cn.fina 20250630       re-fetch a key next refresh
@@ -88,6 +89,8 @@ def main(argv=None):
     i = sub.add_parser("import-legacy"); i.add_argument("table"); i.add_argument("paths", nargs="+"); i.add_argument("--source", default="legacy")
     i.add_argument("--date-col", default="date"); i.add_argument("--symbol-col", default="symbol"); i.add_argument("--done", help="mark these keys done: 'from-dates' or comma list")
     st = sub.add_parser("import-studio", help="load RD-Agent Studio's extra/ cache (tushare + baostock)"); st.add_argument("root")
+    bf = sub.add_parser("backfill-prices", help="first load of cn.daily / cn.adj_factor per instrument through the REST server"); bf.add_argument("--start", default="2015-01-01"); bf.add_argument("--workers", type=int, default=4)
+    ex = sub.add_parser("export-qlib"); ex.add_argument("dir"); ex.add_argument("--start", default="2015-01-01")
     f = sub.add_parser("forget"); f.add_argument("table"); f.add_argument("keys", nargs="+")
     a = p.parse_args(argv)
     store = Store(a.home)
@@ -122,6 +125,15 @@ def main(argv=None):
         import_studio_tushare(store, root / "tushare")
         if (root / "baostock").is_dir():
             import_studio_baostock(store, root / "baostock")
+    elif a.cmd == "backfill-prices":
+        from .legacy import backfill_prices_by_symbol
+
+        out = backfill_prices_by_symbol(store, start=a.start, workers=a.workers)
+        print(f"{out['names']} names, {len(out['failed'])} failed" + (f": {out['failed'][:5]}" if out["failed"] else ""))
+    elif a.cmd == "export-qlib":
+        from .export.qlib import export_qlib
+
+        print(export_qlib(store, a.dir, start=a.start, report=lambda m: print(m, flush=True)))
     elif a.cmd == "forget":
         store.forget(a.table, a.keys)
         print("ok")

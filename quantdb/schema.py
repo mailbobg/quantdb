@@ -52,6 +52,16 @@ def get(name: str) -> Table:
     return TABLES[name]
 
 
+# ---- A-shares: prices and reference (Tushare) -----------------------------------------------------------------
+register(Table("cn.daily", "day", ("tushare",), "A-share daily bars, unadjusted (Tushare daily): prices in yuan, vol in 手 (100 shares), amount in 千元.",
+               {"open": "", "high": "", "low": "", "close": "", "pre_close": "", "change": "", "pct_chg": "%", "vol": "手", "amount": "千元"}))
+register(Table("cn.adj_factor", "day", ("tushare",), "Cumulative adjustment factor per name per day (Tushare adj_factor); adjusted price = raw × adj_factor / adj_factor(base).",
+               {"adj_factor": ""}))
+register(Table("cn.stock_basic", "snapshot", ("tushare",), "Stock master: name, industry, market, listing and delisting dates (Tushare stock_basic, all statuses).",
+               {"name": "", "area": "", "industry": "", "market": "主板/创业板/科创板/北交所", "list_date": "", "delist_date": "", "list_status": "L/D/P"}, date_field="list_date"))
+register(Table("cn.index_members", "symbol", ("tushare",), "Index constituents and weights at month ends (Tushare index_weight); symbol = index code, con_code = member.",
+               {"con_code": "member, Qlib code", "weight": "%"}, universe="cn.indices"))
+
 # ---- A-shares: Tushare paid-tier tables (reseller servers) ----------------------------------------------------
 register(Table("cn.moneyflow", "day", ("tushare",), "Order-size money flow per name per day (Tushare moneyflow).",
                {"buy_sm_amount": "small-order buy value, 万元", "sell_sm_amount": "small-order sell value", "buy_md_amount": "", "sell_md_amount": "",

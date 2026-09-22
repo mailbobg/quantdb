@@ -222,3 +222,73 @@ def import_alphavantage_json(store: Store, root, report=print):
     record = store.upsert("us.earnings_av", frame, keys=("date", "symbol"), done=done, source="alphavantage", note="imported")
     report(f"us.earnings_av: {record['rows']} rows, {len(done)} symbols")
     return record
+
+
+# ---- first load of the price tables --------------------------------------------------------------------------
+def backfill_prices_by_symbol(store: Store, start="2015-01-01", symbols=None, report=print, workers=4):
+    """Fill cn.daily and cn.adj_factor from ``start`` one instrument at a time through the Tushare REST server
+    (whole-market days exceed its row cap, one name's history does not), then mark every trading day done so the
+    daily refresh continues from there by trading day."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from .recorders import Recorder
+    from .sources.base import compact, ts_code
+    from .sources.tushare_reseller import TushareReseller
+
+    rec = Recorder(store)
+    if symbols is not None:
+        names = list(symbols)
+    else:
+        names = rec.universe("cn.all")
+        if store.table_path("cn.stock_basic").is_file():  # names the Qlib list lacks (recent IPOs, delisted)
+            names = sorted(set(names) | set(store.read("cn.stock_basic")["symbol"]))
+    src = TushareReseller(rec.config)
+    end = compact(pd.Timestamp.today())
+    have = set()
+    if store.table_path("cn.daily").is_file():
+        have = set(store.sql('SELECT DISTINCT symbol FROM "cn"."daily"')["symbol"])
+    todo = [s for s in names if s not in have]
+    report(f"{len(todo)} names to fetch ({len(have)} already there)")
+
+    def one(symbol):
+        for attempt in range(4):
+            try:
+                d = src.main.query("daily", {"ts_code": ts_code(symbol), "start_date": compact(start), "end_date": end})
+                a = src.main.query("adj_factor", {"ts_code": ts_code(symbol), "start_date": compact(start), "end_date": end})
+                return symbol, d, a, None
+            except Exception as error:  # noqa: BLE001
+                time.sleep(3 * (attempt + 1)); last = error
+        return symbol, None, None, last
+
+    def shape(raw, symbol, drop):
+        out = raw.copy()
+        out["date"] = pd.to_datetime(out["trade_date"], format="%Y%m%d"); out["symbol"] = symbol
+        return out.drop(columns=[c for c in drop if c in out.columns])
+
+    failed, batch_d, batch_a, n = [], [], [], 0
+    with ThreadPoolExecutor(workers) as pool:
+        for i, (symbol, d, a, error) in enumerate(pool.map(one, todo), 1):
+            if error is not None:
+                failed.append((symbol, str(error)[:120]))
+            else:
+                if d is not None and len(d):
+                    batch_d.append(shape(d, symbol, ("ts_code",)))
+                if a is not None and len(a):
+                    batch_a.append(shape(a, symbol, ("ts_code",)))
+            if i % 200 == 0 or i == len(todo):
+                if batch_d:
+                    store.upsert("cn.daily", pd.concat(batch_d, ignore_index=True), keys=("date", "symbol"), source="tushare")
+                if batch_a:
+                    store.upsert("cn.adj_factor", pd.concat(batch_a, ignore_index=True), keys=("date", "symbol"), source="tushare")
+                n += len(batch_d); batch_d, batch_a = [], []
+                report(f"  {i}/{len(todo)} names, {len(failed)} failed")
+    # every trading day up to yesterday counts as fetched; today follows through the normal refresh
+    for table in ("cn.daily", "cn.adj_factor"):
+        if store.table_path(table).is_file():
+            days = store.sql(f'SELECT DISTINCT date FROM "cn"."{table.split(".")[1]}" WHERE date < current_date')["date"]
+            record = store.meta(table)
+            record["done"] = sorted(set(record.get("done", [])) | {pd.Timestamp(d).strftime("%Y%m%d") for d in days})
+            record["plan_start"] = str(pd.Timestamp(start).date())
+            store._write_meta(table, record)
+    return {"names": len(todo), "failed": failed}

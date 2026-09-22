@@ -22,6 +22,8 @@ MIRROR_PACE, MAIN_PACE = 1.5, 0.5
 MAIN_ALIAS = {"express_vip": "express"}  # the REST front has no *_vip for express; its express takes period and pages
 
 API = {  # table -> (tushare interface, how the key maps to parameters, paged-only)
+    "cn.daily": ("daily", "day", False), "cn.adj_factor": ("adj_factor", "day", False),
+    "cn.stock_basic": ("stock_basic", "stock_basic", False), "cn.index_members": ("index_weight", "index_months", False),
     "cn.moneyflow": ("moneyflow", "day", False), "cn.margin": ("margin_detail", "day", False), "cn.chips": ("cyq_perf", "day", False),
     "cn.basic": ("daily_basic", "day", False), "cn.toplist": ("top_list", "day", False), "cn.block": ("block_trade", "day", False),
     "cn.fina": ("fina_indicator_vip", "period", False), "cn.forecast": ("forecast_vip", "period", False), "cn.express": ("express_vip", "period", False),
@@ -104,6 +106,39 @@ class _Main:
 class TushareReseller(Source):
     name = "tushare"
 
+    def _stock_basic(self):
+        """The master by exchange and status (each slice under the REST server's 5000-row cap)."""
+        frames = []
+        for exchange in ("SSE", "SZSE", "BSE"):
+            for status in ("L", "D", "P"):
+                frame = self._query("stock_basic", {"exchange": exchange, "list_status": status, "fields": "ts_code,symbol,name,area,industry,market,exchange,list_status,list_date,delist_date,is_hs"})
+                if frame is not None and len(frame):
+                    frames.append(frame)
+        raw = pd.concat(frames, ignore_index=True)
+        out = raw.copy()
+        out["symbol"] = out["ts_code"].map(qlib_code)
+        out["date"] = pd.to_datetime(out["list_date"], format="%Y%m%d", errors="coerce").fillna(pd.Timestamp("1900-01-01"))
+        return out.dropna(subset=["symbol"]).drop(columns=["ts_code"])
+
+    def _index_members(self, key):
+        """Month-end constituents of one index from the resume date on (one call per month: a call is capped)."""
+        code, _, since = key.partition("@")
+        start = pd.Timestamp(since) if since else pd.Timestamp("2015-01-01")
+        frames = []
+        for month in pd.period_range(start.to_period("M"), pd.Timestamp.today().to_period("M"), freq="M"):
+            first, last = month.start_time, month.end_time
+            if last < start:
+                continue
+            frame = self._query("index_weight", {"index_code": code, "start_date": compact(first), "end_date": compact(last)})
+            if frame is not None and len(frame):
+                frames.append(frame)
+        if not frames:
+            return EMPTY.copy()
+        raw = pd.concat(frames, ignore_index=True)
+        out = pd.DataFrame({"date": pd.to_datetime(raw["trade_date"], format="%Y%m%d"), "symbol": raw["index_code"].astype(str),
+                            "con_code": raw["con_code"].map(qlib_code), "weight": pd.to_numeric(raw["weight"], errors="coerce")})
+        return out.dropna(subset=["con_code"]).reset_index(drop=True)
+
     def __init__(self, config):
         super().__init__(config)
         self.mirror = self.main = None
@@ -133,6 +168,10 @@ class TushareReseller(Source):
 
     def fetch(self, table, key):
         api, kind, paged = API[table]
+        if kind == "stock_basic":
+            return self._stock_basic()
+        if kind == "index_months":
+            return self._index_members(key)
         if kind == "day":
             raw = self._query(api, {"trade_date": key}, paged)
             date_col = "trade_date"

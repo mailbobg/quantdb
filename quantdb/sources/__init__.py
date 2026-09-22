@@ -14,9 +14,10 @@ def _load():
     from .ftshare import FTShare
     from .qlib_bridge import QlibBridge
     from .sec import Sec
+    from .openbb_src import OpenBB
     from .tushare_reseller import TushareReseller
 
-    for cls in (TushareReseller, Baostock, Eastmoney, Sec, AppStore, FTShare, ArkFunds, QlibBridge):
+    for cls in (TushareReseller, Baostock, Eastmoney, Sec, AppStore, FTShare, ArkFunds, QlibBridge, OpenBB):
         REGISTRY[cls.name] = cls
 
 

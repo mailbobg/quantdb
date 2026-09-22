@@ -65,7 +65,7 @@ quantdb forget cn.fina 20250630         re-fetch a key next time
 | arkfunds | us.ark_trades | nothing |
 | appstore | alt.appstore_top | nothing |
 | qlib (read-only bridge) | meta.instruments, calendars | local Qlib providers (`QLIB_CN`, `QLIB_US`) |
-| openbb | us.daily us.earnings_calendar | `pip install quantdb[openbb]` in quantdb's own venv |
+| openbb | us.daily (yfinance) us.earnings_calendar (Nasdaq) | `pip install quantdb[openbb]` in quantdb's own venv; keyed providers via `OPENBB_<PROVIDER>_API_KEY` |
 
 Adding a provider is one file under `quantdb/sources/` and a line in the registry; adding a table is one
 `register(Table(...))` in `quantdb/schema.py`. A table may list several sources; the recorder takes the first one

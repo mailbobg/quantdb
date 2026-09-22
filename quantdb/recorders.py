@@ -188,7 +188,7 @@ class Recorder:
 EXTRA_KEYS = {
     "cn.unlock": ("holder_name",), "cn.block": ("price", "vol", "buyer", "seller"), "cn.toplist": ("reason",), "cn.holders": ("end_date",),
     "cn.forecast": ("ann_date", "type"), "cn.insider": ("changer", "change_shares"), "us.form4": ("accession", "trans_date", "trans_code", "shares", "price"),
-    "us.ark_trades": ("fund", "direction"), "alt.appstore_top": (), "cb.premium": (), "fut.cffex": (),
+    "us.ark_trades": ("fund", "direction"), "us.earnings_calendar": (), "alt.appstore_top": (), "cb.premium": (), "fut.cffex": (),
 }
 
 

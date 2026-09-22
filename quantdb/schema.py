@@ -93,6 +93,10 @@ register(Table("us.form4", "snapshot", ("sec",), "SEC Form 4 open-market insider
                {"filed": "filing date", "trans_date": "", "trans_code": "P buy / S sell", "shares": "", "price": "", "value": "", "relationship": "officer/director/10% owner"}))
 register(Table("us.eps_xbrl", "symbol", ("sec",), "Quarterly diluted EPS from SEC XBRL companyconcept, dated by the first filing that reported the quarter.",
                {"end": "quarter end", "filed": "first filing date", "eps": "diluted EPS", "form": "10-Q/10-K"}, universe="us.all"))
+register(Table("us.daily", "symbol", ("openbb",), "US equity daily bars (OpenBB → yfinance), unadjusted OHLCV.", {"open": "", "high": "", "low": "", "close": "", "volume": ""}, universe="us.all"))
+register(Table("us.earnings_calendar", "week", ("openbb",), "Earnings calendar with consensus and actual EPS (OpenBB → Nasdaq), by report week; recent weeks re-fetched.",
+               {"report_date": "", "eps_consensus": "", "eps_actual": "filled after the report", "eps_previous": "same quarter last year", "num_estimates": "", "reporting_time": "pre-market/after-hours", "market_cap": ""},
+               date_field="report_date", open_weeks=4, ahead_days=21))
 register(Table("us.ark_trades", "snapshot", ("arkfunds",), "ARK ETF daily trade disclosures (arkfunds.io).", {"fund": "", "direction": "Buy/Sell", "shares": "", "etf_percent": "% of fund"}))
 
 # ---- Alternative ---------------------------------------------------------------------------------------------

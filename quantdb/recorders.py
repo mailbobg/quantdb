@@ -16,6 +16,7 @@ Key planning per key kind (see schema.Table):
 
 Progress is reported through ``report(event: dict)`` so a CLI or a server can relay it.
 """
+import threading
 from datetime import date, timedelta
 
 import pandas as pd
@@ -112,7 +113,9 @@ class Recorder:
         return sorted(c for c in codes if c[2:4].isdigit())
 
     # ---- refresh ----------------------------------------------------------------------------------------------
-    def refresh(self, name: str, start=None, end=None, symbols=None, sources=None, limit=None) -> dict:
+    def refresh(self, name: str, start=None, end=None, symbols=None, sources=None, limit=None, workers=1) -> dict:
+        """``workers`` > 1 fetches keys concurrently (each thread with its own source instances); commits stay
+        in this thread, in key order."""
         table = schema.get(name)
         keys = self.keys(table, start, end, symbols)
         if limit:
@@ -123,8 +126,21 @@ class Recorder:
             record = self.store.meta(name); record["plan_start"] = str(pd.Timestamp(start).date()); self.store._write_meta(name, record)
         done, failed, rows = [], [], 0
         batch, batch_keys = [], []
-        for i, key in enumerate(keys, 1):
-            frame, used, error = self._fetch(table, names, key)
+        if workers > 1:
+            from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
+
+            pool = ThreadPoolExecutor(workers)
+            local = threading.local()
+
+            def fetch(key):
+                if not hasattr(local, "sources"):
+                    local.sources = {}
+                return self._fetch(table, names, key, local.sources)
+
+            results = pool.map(fetch, keys)
+        else:
+            results = (self._fetch(table, names, key) for key in keys)
+        for i, (key, (frame, used, error)) in enumerate(zip(keys, results), 1):
             if error is not None:
                 failed.append((key, str(error)[:200]))
                 self.report({"table": name, "event": "fail", "key": key, "error": str(error)[:200]})
@@ -150,11 +166,11 @@ class Recorder:
             return False
         return (pd.Timestamp(date.today()) - pd.Timestamp(key)).days <= days
 
-    def _fetch(self, table, names, key):
+    def _fetch(self, table, names, key, sources=None):
         last = None
         for src_name in names:
             try:
-                src = self.source(src_name)
+                src = self.source(src_name) if sources is None else sources.setdefault(src_name, make(src_name, self.config))
             except Exception as error:  # noqa: BLE001  (missing secret, missing package)
                 last = error
                 continue

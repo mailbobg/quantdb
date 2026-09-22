@@ -144,3 +144,10 @@ def test_upsert_aligns_dtypes(tmp_path):
     got = store.read("cn.t")
     assert got["ann"].tolist() == [20250102, 20250103]
     assert got["tag"].astype(str).tolist() == ["1", "x"]
+
+
+def test_concurrent_refresh_commits_in_key_order(tmp_path, monkeypatch, registry):
+    rec = make_recorder(tmp_path, monkeypatch)
+    out = rec.refresh("cn.fake_day", start="2025-01-02", end="2025-01-10", workers=4)
+    assert out["done"] == 7 and out["failed"] == []
+    assert rec.store.meta("cn.fake_day")["done"] == [d.strftime("%Y%m%d") for d in pd.bdate_range("2025-01-02", "2025-01-10")]

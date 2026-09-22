@@ -39,6 +39,7 @@ def main(argv=None):
     sub.add_parser("tables")
     r = sub.add_parser("refresh"); r.add_argument("table", nargs="?"); r.add_argument("--namespace"); r.add_argument("--start"); r.add_argument("--end")
     r.add_argument("--limit", type=int); r.add_argument("--source", action="append"); r.add_argument("--symbols", help="comma-separated")
+    r.add_argument("--workers", type=int, default=1, help="concurrent fetches (slow gateways)")
     q = sub.add_parser("sql"); q.add_argument("query")
     i = sub.add_parser("import-legacy"); i.add_argument("table"); i.add_argument("paths", nargs="+"); i.add_argument("--source", default="legacy")
     i.add_argument("--date-col", default="date"); i.add_argument("--symbol-col", default="symbol"); i.add_argument("--done", help="mark these keys done: 'from-dates' or comma list")
@@ -55,7 +56,7 @@ def main(argv=None):
         print(pd.DataFrame(rows).to_string(index=False))
     elif a.cmd == "refresh":
         rec = Recorder(store, report=_report)
-        kw = {"start": a.start, "end": a.end, "limit": a.limit, "sources": a.source, "symbols": a.symbols.split(",") if a.symbols else None}
+        kw = {"start": a.start, "end": a.end, "limit": a.limit, "sources": a.source, "symbols": a.symbols.split(",") if a.symbols else None, "workers": a.workers}
         if a.table:
             rec.refresh(a.table, **kw)
         else:

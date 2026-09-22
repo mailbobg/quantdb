@@ -200,3 +200,25 @@ def import_eastmoney_csvs(store: Store, root, report=print):
     record = store.upsert("cb.premium", frame, keys=("date", "symbol"), done=done, source="eastmoney", note="imported")
     report(f"cb.premium: {record['rows']} rows, {len(done)} bonds")
     return record
+
+
+def import_alphavantage_json(store: Store, root, report=print):
+    """Alpha Vantage EARNINGS responses saved as <SYMBOL>.json."""
+    import json
+
+    from .sources.alphavantage import parse_earnings
+
+    root = Path(root).expanduser()
+    frames, done = [], []
+    for path in sorted(root.glob("*.json")):
+        body = json.loads(path.read_text())
+        if "quarterlyEarnings" not in body:
+            continue
+        frame = parse_earnings(body, path.stem)
+        done.append(path.stem.upper())
+        if len(frame):
+            frames.append(frame)
+    frame = pd.concat(frames, ignore_index=True)
+    record = store.upsert("us.earnings_av", frame, keys=("date", "symbol"), done=done, source="alphavantage", note="imported")
+    report(f"us.earnings_av: {record['rows']} rows, {len(done)} symbols")
+    return record

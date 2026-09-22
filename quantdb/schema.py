@@ -97,6 +97,8 @@ register(Table("us.daily", "symbol", ("openbb",), "US equity daily bars (OpenBB 
 register(Table("us.earnings_calendar", "week", ("openbb",), "Earnings calendar with consensus and actual EPS (OpenBB → Nasdaq), by report week; recent weeks re-fetched.",
                {"report_date": "", "eps_consensus": "", "eps_actual": "filled after the report", "eps_previous": "same quarter last year", "num_estimates": "", "reporting_time": "pre-market/after-hours", "market_cap": ""},
                date_field="report_date", open_weeks=4, ahead_days=21))
+register(Table("us.earnings_av", "symbol", ("alphavantage",), "Quarterly reported vs estimated EPS with report dates (Alpha Vantage EARNINGS; free tier 25 calls/day, so only crawled names).",
+               {"fiscal_end": "", "eps": "reported", "eps_estimate": "", "surprise_pct": "%", "report_time": "pre-market/post-market"}, universe="us.all"))
 register(Table("us.ark_trades", "snapshot", ("arkfunds",), "ARK ETF daily trade disclosures (arkfunds.io).", {"fund": "", "direction": "Buy/Sell", "shares": "", "etf_percent": "% of fund"}))
 
 # ---- Alternative ---------------------------------------------------------------------------------------------
@@ -105,4 +107,4 @@ register(Table("alt.appstore_top", "day", ("appstore",), "Apple App Store top-10
 
 # ---- Reference -----------------------------------------------------------------------------------------------
 register(Table("meta.instruments", "snapshot", ("qlib",), "Instrument master: code, name, market, listing spans (from the local Qlib providers).",
-               {"market": "cn/us", "name": "", "start": "", "end": ""}))
+               {"market": "cn/us", "name": "from QUANTDB_HOME/instrument_names.json when present", "industry": "", "start": "", "end": ""}))

@@ -46,4 +46,12 @@ class QlibBridge(Source):
             frames.append(m)
         if not frames:
             return EMPTY.copy()
-        return pd.concat(frames, ignore_index=True)
+        out = pd.concat(frames, ignore_index=True)
+        names_file = Path(self.config.get("QUANTDB_HOME") or "~/.quantdb").expanduser() / "instrument_names.json"
+        if names_file.is_file():  # {"names": {"SZ000001": {"name": ..., "industry": ...}}}
+            import json
+
+            names = json.loads(names_file.read_text()).get("names") or {}
+            out["name"] = out["symbol"].map(lambda s: (names.get(s) or {}).get("name"))
+            out["industry"] = out["symbol"].map(lambda s: (names.get(s) or {}).get("industry"))
+        return out

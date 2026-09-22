@@ -7,6 +7,7 @@ REGISTRY = {}
 def _load():
     if REGISTRY:
         return
+    from .alphavantage import AlphaVantage
     from .appstore import AppStore
     from .arkfunds import ArkFunds
     from .baostock_src import Baostock
@@ -17,7 +18,7 @@ def _load():
     from .openbb_src import OpenBB
     from .tushare_reseller import TushareReseller
 
-    for cls in (TushareReseller, Baostock, Eastmoney, Sec, AppStore, FTShare, ArkFunds, QlibBridge, OpenBB):
+    for cls in (TushareReseller, Baostock, Eastmoney, Sec, AppStore, FTShare, ArkFunds, QlibBridge, OpenBB, AlphaVantage):
         REGISTRY[cls.name] = cls
 
 

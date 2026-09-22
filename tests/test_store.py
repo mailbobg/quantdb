@@ -151,3 +151,16 @@ def test_concurrent_refresh_commits_in_key_order(tmp_path, monkeypatch, registry
     out = rec.refresh("cn.fake_day", start="2025-01-02", end="2025-01-10", workers=4)
     assert out["done"] == 7 and out["failed"] == []
     assert rec.store.meta("cn.fake_day")["done"] == [d.strftime("%Y%m%d") for d in pd.bdate_range("2025-01-02", "2025-01-10")]
+
+
+def test_init_writes_env_from_secrets(tmp_path):
+    from quantdb.cli import init
+
+    (tmp_path / "old.env").write_text("DATAHUB_API_KEY=k1\nOTHER=x\nFTSHARE_API_KEY=\n")
+    store = Store(tmp_path / "home")
+    message = init(store, str(tmp_path / "old.env"))
+    text = (store.root / ".env").read_text()
+    assert "DATAHUB_API_KEY=k1" in text and "OTHER" not in text and "# FTSHARE_API_KEY=" in text and "copied DATAHUB_API_KEY" in message
+    (store.root / ".env").write_text("DATAHUB_API_KEY=k2\n")
+    init(store, str(tmp_path / "old.env"))
+    assert "DATAHUB_API_KEY=k2" in (store.root / ".env").read_text()  # existing values win

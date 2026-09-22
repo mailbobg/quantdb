@@ -19,6 +19,7 @@ from .base import EMPTY, Source, compact, qlib_code
 MIRROR_CAP = 6000
 ROW_CAP = 5000
 MIRROR_PACE, MAIN_PACE = 1.5, 0.5
+MAIN_ALIAS = {"express_vip": "express"}  # the REST front has no *_vip for express; its express takes period and pages
 
 API = {  # table -> (tushare interface, how the key maps to parameters, paged-only)
     "cn.moneyflow": ("moneyflow", "day", False), "cn.margin": ("margin_detail", "day", False), "cn.chips": ("cyq_perf", "day", False),
@@ -67,6 +68,7 @@ class _Main:
         self.limits = {}  # api -> page size the server accepts (learned from its 400 replies)
 
     def query(self, api, params):
+        api = MAIN_ALIAS.get(api, api)
         rows, fields, offset = [], None, 0
         limit = self.limits.get(api, ROW_CAP)
         while True:

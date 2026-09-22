@@ -71,6 +71,17 @@ Adding a provider is one file under `quantdb/sources/` and a line in the registr
 `register(Table(...))` in `quantdb/schema.py`. A table may list several sources; the recorder takes the first one
 that answers and records which one did.
 
+## Plugging a program in
+
+```
+pip install -e /path/to/quantdb            # into the program's own venv
+quantdb init --secrets ~/old/.env          # ~/.quantdb/.env from an existing env file (optional)
+export QUANTDB_HOME=~/.quantdb             # only when the store lives elsewhere
+```
+
+RD-Agent Studio is the first user: `rdagent/log/server/studio_fields.py` reads twelve `cn.*` tables into its
+factor exports and calls the recorder from its data sheet. It has no cache of its own.
+
 ## Environments
 
 Readers need only `duckdb`, `pandas`, `pyarrow`: `pip install -e /path/to/quantdb` into any project venv.

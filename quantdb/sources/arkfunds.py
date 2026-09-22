@@ -21,6 +21,9 @@ class ArkFunds(Source):
                 frames.append(pd.DataFrame(reply.json()["trades"]))
         if not frames:
             return EMPTY.copy()
-        raw = pd.concat(frames, ignore_index=True)
-        return pd.DataFrame({"date": pd.to_datetime(raw["date"]), "symbol": raw["ticker"].astype(str).str.upper(), "fund": raw["fund"], "direction": raw["direction"],
-                             "shares": pd.to_numeric(raw["shares"], errors="coerce"), "etf_percent": pd.to_numeric(raw["etf_percent"], errors="coerce"), "company": raw["company"]})
+        return parse_trades(pd.concat(frames, ignore_index=True))
+
+
+def parse_trades(raw):
+    return pd.DataFrame({"date": pd.to_datetime(raw["date"]), "symbol": raw["ticker"].astype(str).str.upper(), "fund": raw["fund"], "direction": raw["direction"],
+                         "shares": pd.to_numeric(raw["shares"], errors="coerce"), "etf_percent": pd.to_numeric(raw["etf_percent"], errors="coerce"), "company": raw["company"]})

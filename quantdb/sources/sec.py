@@ -47,17 +47,7 @@ class Sec(Source):
             if reply.status_code != 200:
                 continue  # not published yet
             z = zipfile.ZipFile(io.BytesIO(reply.content))
-            sub = pd.read_csv(z.open("SUBMISSION.tsv"), sep="\t", dtype=str, usecols=["ACCESSION_NUMBER", "FILING_DATE", "DOCUMENT_TYPE", "ISSUERTRADINGSYMBOL"], low_memory=False)
-            tr = pd.read_csv(z.open("NONDERIV_TRANS.tsv"), sep="\t", dtype=str, usecols=["ACCESSION_NUMBER", "TRANS_DATE", "TRANS_CODE", "TRANS_SHARES", "TRANS_PRICEPERSHARE"], low_memory=False)
-            ow = pd.read_csv(z.open("REPORTINGOWNER.tsv"), sep="\t", dtype=str, usecols=["ACCESSION_NUMBER", "RPTOWNER_RELATIONSHIP"], low_memory=False)
-            sub = sub[sub.DOCUMENT_TYPE.isin(["4", "4/A"])]
-            rel = ow.groupby("ACCESSION_NUMBER")["RPTOWNER_RELATIONSHIP"].agg(lambda s: "|".join(s.dropna().str.lower()))
-            tr = tr[tr.TRANS_CODE.isin(["P", "S"])].merge(sub, on="ACCESSION_NUMBER").merge(rel.rename("relationship"), left_on="ACCESSION_NUMBER", right_index=True, how="left")
-            tr["shares"] = pd.to_numeric(tr.TRANS_SHARES, errors="coerce"); tr["price"] = pd.to_numeric(tr.TRANS_PRICEPERSHARE, errors="coerce")
-            frames.append(pd.DataFrame({"date": pd.to_datetime(tr.FILING_DATE, format="%d-%b-%Y", errors="coerce"), "symbol": tr.ISSUERTRADINGSYMBOL.str.upper().str.strip(),
-                                        "filed": pd.to_datetime(tr.FILING_DATE, format="%d-%b-%Y", errors="coerce"), "trans_date": pd.to_datetime(tr.TRANS_DATE, format="%d-%b-%Y", errors="coerce"),
-                                        "trans_code": tr.TRANS_CODE, "shares": tr.shares, "price": tr.price, "value": tr.shares * tr.price,
-                                        "relationship": tr.relationship, "accession": tr.ACCESSION_NUMBER, "quarter": q}))
+            frames.append(parse_form4(lambda name: z.open(name), q))
         if not frames:
             return EMPTY.copy()
         return pd.concat(frames, ignore_index=True).dropna(subset=["date", "symbol"])
@@ -75,27 +65,48 @@ class Sec(Source):
         reply = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/us-gaap/EarningsPerShareDiluted.json", headers=self.headers, timeout=60)
         if reply.status_code != 200:
             return EMPTY.copy()
-        rows = []
-        for unit, facts in (reply.json().get("units") or {}).items():
-            for f in facts:
-                if f.get("form") not in ("10-Q", "10-K") or not f.get("start"):
-                    continue
-                s, e = pd.Timestamp(f["start"]), pd.Timestamp(f["end"]); days = (e - s).days
-                kind = "Q" if 80 <= days <= 100 else "Y" if 350 <= days <= 380 else None
-                if kind:
-                    rows.append({"kind": kind, "start": s, "end": e, "filed": pd.Timestamp(f["filed"]), "eps": f["val"], "form": f["form"]})
-        q = pd.DataFrame(rows)
-        if q.empty:
-            return EMPTY.copy()
-        q = q.sort_values("filed").drop_duplicates(["kind", "end"], keep="first")
-        quarters, years = q[q.kind == "Q"].copy(), q[q.kind == "Y"]
-        extra = []
-        for _, y in years.iterrows():
-            inside = quarters[(quarters.end > y.start) & (quarters.end <= y.end)]
-            if len(inside) == 3 and (y.end - inside.end.max()).days > 60:
-                extra.append({"kind": "Q", "start": inside.end.max(), "end": y.end, "filed": y.filed, "eps": y.eps - inside.eps.sum(), "form": y.form})
-        if extra:
-            quarters = pd.concat([quarters, pd.DataFrame(extra)], ignore_index=True)
-        quarters = quarters.sort_values("end").drop_duplicates("end", keep="first")
-        quarters = quarters[(quarters.filed - quarters.end).dt.days.between(10, 120)]
-        return pd.DataFrame({"date": quarters["end"], "symbol": symbol.upper(), "end": quarters["end"], "filed": quarters["filed"], "eps": quarters["eps"].astype(float), "form": quarters["form"]})
+        return parse_eps_concept(reply.json(), symbol)
+
+
+def parse_form4(open_member, quarter):
+    """One quarter of the insider data set: ``open_member(name)`` returns a file object for SUBMISSION.tsv etc."""
+    sub = pd.read_csv(open_member("SUBMISSION.tsv"), sep="\t", dtype=str, usecols=["ACCESSION_NUMBER", "FILING_DATE", "DOCUMENT_TYPE", "ISSUERTRADINGSYMBOL"], low_memory=False)
+    tr = pd.read_csv(open_member("NONDERIV_TRANS.tsv"), sep="\t", dtype=str, usecols=["ACCESSION_NUMBER", "TRANS_DATE", "TRANS_CODE", "TRANS_SHARES", "TRANS_PRICEPERSHARE"], low_memory=False)
+    ow = pd.read_csv(open_member("REPORTINGOWNER.tsv"), sep="\t", dtype=str, usecols=["ACCESSION_NUMBER", "RPTOWNER_RELATIONSHIP"], low_memory=False)
+    sub = sub[sub.DOCUMENT_TYPE.isin(["4", "4/A"])]
+    rel = ow.groupby("ACCESSION_NUMBER")["RPTOWNER_RELATIONSHIP"].agg(lambda s: "|".join(s.dropna().str.lower()))
+    tr = tr[tr.TRANS_CODE.isin(["P", "S"])].merge(sub, on="ACCESSION_NUMBER").merge(rel.rename("relationship"), left_on="ACCESSION_NUMBER", right_index=True, how="left")
+    tr["shares"] = pd.to_numeric(tr.TRANS_SHARES, errors="coerce"); tr["price"] = pd.to_numeric(tr.TRANS_PRICEPERSHARE, errors="coerce")
+    return pd.DataFrame({"date": pd.to_datetime(tr.FILING_DATE, format="%d-%b-%Y", errors="coerce"), "symbol": tr.ISSUERTRADINGSYMBOL.str.upper().str.strip(),
+                         "filed": pd.to_datetime(tr.FILING_DATE, format="%d-%b-%Y", errors="coerce"), "trans_date": pd.to_datetime(tr.TRANS_DATE, format="%d-%b-%Y", errors="coerce"),
+                         "trans_code": tr.TRANS_CODE, "shares": tr.shares, "price": tr.price, "value": tr.shares * tr.price,
+                         "relationship": tr.relationship, "accession": tr.ACCESSION_NUMBER, "quarter": quarter})
+
+
+def parse_eps_concept(body, symbol):
+    """Quarterly diluted EPS from a companyconcept JSON: quarters as filed, Q4 derived from 10-K minus the three
+    quarters, dated by the first filing that reported the period."""
+    rows = []
+    for unit, facts in (body.get("units") or {}).items():
+        for f in facts:
+            if f.get("form") not in ("10-Q", "10-K") or not f.get("start"):
+                continue
+            s, e = pd.Timestamp(f["start"]), pd.Timestamp(f["end"]); days = (e - s).days
+            kind = "Q" if 80 <= days <= 100 else "Y" if 350 <= days <= 380 else None
+            if kind:
+                rows.append({"kind": kind, "start": s, "end": e, "filed": pd.Timestamp(f["filed"]), "eps": f["val"], "form": f["form"]})
+    q = pd.DataFrame(rows)
+    if q.empty:
+        return EMPTY.copy()
+    q = q.sort_values("filed").drop_duplicates(["kind", "end"], keep="first")
+    quarters, years = q[q.kind == "Q"].copy(), q[q.kind == "Y"]
+    extra = []
+    for _, y in years.iterrows():
+        inside = quarters[(quarters.end > y.start) & (quarters.end <= y.end)]
+        if len(inside) == 3 and (y.end - inside.end.max()).days > 60:
+            extra.append({"kind": "Q", "start": inside.end.max(), "end": y.end, "filed": y.filed, "eps": y.eps - inside.eps.sum(), "form": y.form})
+    if extra:
+        quarters = pd.concat([quarters, pd.DataFrame(extra)], ignore_index=True)
+    quarters = quarters.sort_values("end").drop_duplicates("end", keep="first")
+    quarters = quarters[(quarters.filed - quarters.end).dt.days.between(10, 120)]
+    return pd.DataFrame({"date": quarters["end"], "symbol": symbol.upper(), "end": quarters["end"], "filed": quarters["filed"], "eps": quarters["eps"].astype(float), "form": quarters["form"]})

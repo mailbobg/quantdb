@@ -46,8 +46,8 @@ def import_files(store: Store, table: str, paths, date_col="date", symbol_col="s
     frame["date"] = pd.to_datetime(frame["date"].astype(str).str.replace("-", ""), format="%Y%m%d", errors="coerce")
     frame = frame.dropna(subset=["date", "symbol"])
     keys = None
-    if done == "from-names":  # one file per fetch key, named after it
-        keys = stems
+    if done == "from-names":  # one file per fetch key, named after it (a prefix like daily_ is dropped)
+        keys = [stem.rsplit("_", 1)[-1] for stem in stems]
     elif done == "from-dates":
         if t.key == "day":
             keys = sorted(frame["date"].dt.strftime("%Y%m%d").unique())
@@ -63,7 +63,7 @@ def import_files(store: Store, table: str, paths, date_col="date", symbol_col="s
         return store.replace(table, frame, source=source, note="imported")
     record = store.upsert(table, frame, keys=replace_keys(t), done=keys, source=source, note="imported")
     if keys and t.key in ("day", "period", "week") and not record.get("plan_start"):
-        record["plan_start"] = str(pd.Timestamp(min(keys)).date())  # refreshes continue from where the cache began
+        record["plan_start"] = str(frame["date"].min().date())  # refreshes continue from where the cache began
         store._write_meta(table, record)
     return record
 
@@ -113,4 +113,90 @@ def import_studio_baostock(store: Store, root, report=print):
     files = [f for f in sorted(root.glob("*.csv")) if f.stem[:2] in ("SH", "SZ")]
     record = import_files(store, "cn.baostock", files, source="baostock", done="from-names", transform=tf)
     report(f"cn.baostock: {record['rows']} rows {record['start']}..{record['end']}")
+    return record
+
+
+# ---- other caches: raw provider files already on disk -------------------------------------------------------
+def import_tushare_csvs(store: Store, table: str, files, date_col="trade_date", source="tushare", report=print):
+    """Tushare CSVs for non-A-share tables (cb.*, fut.*): ``symbol`` is the ts_code itself."""
+    def tf(raw, path):
+        return raw.rename(columns={"ts_code": "symbol"})
+
+    keys = "from-names" if schema.get(table).key in ("day", "period", "week") else None
+    record = import_files(store, table, files, date_col=date_col, source=source, done=keys, transform=tf)
+    report(f"{table}: {record['rows']} rows {record['start']}..{record['end']}")
+    return record
+
+
+def import_form4_quarters(store: Store, root, report=print):
+    """A folder of unpacked SEC insider data sets, one sub-folder per quarter (2017q1/SUBMISSION.tsv …)."""
+    from .sources.sec import parse_form4
+
+    root = Path(root).expanduser()
+    frames = []
+    for folder in sorted(p for p in root.iterdir() if p.is_dir() and (p / "SUBMISSION.tsv").is_file()):
+        frames.append(parse_form4(lambda name, f=folder: open(f / name, "rb"), folder.name))
+    frame = pd.concat(frames, ignore_index=True).dropna(subset=["date", "symbol"])
+    record = store.replace("us.form4", frame, source="sec", note=f"imported {len(frames)} quarters")
+    report(f"us.form4: {record['rows']} rows {record['start']}..{record['end']}")
+    return record
+
+
+def import_eps_concepts(store: Store, root, report=print):
+    """A folder of SEC companyconcept JSON files named <SYMBOL>.json."""
+    import json
+
+    from .sources.sec import parse_eps_concept
+
+    root = Path(root).expanduser()
+    frames, done = [], []
+    for path in sorted(root.glob("*.json")):
+        try:
+            body = json.loads(path.read_text())
+        except ValueError:
+            continue
+        if not isinstance(body, dict) or "units" not in body:
+            continue
+        frame = parse_eps_concept(body, path.stem)
+        done.append(path.stem.upper())
+        if len(frame):
+            frames.append(frame)
+    frame = pd.concat(frames, ignore_index=True)
+    record = store.upsert("us.eps_xbrl", frame, keys=("date", "symbol"), done=done, source="sec", note="imported")
+    report(f"us.eps_xbrl: {record['rows']} rows, {len(done)} symbols")
+    return record
+
+
+def import_ark_json(store: Store, files, report=print):
+    """arkfunds.io trade responses saved as JSON ({"trades": [...]})."""
+    import json
+
+    from .sources.arkfunds import parse_trades
+
+    raw = pd.concat([pd.DataFrame(json.loads(Path(f).read_text())["trades"]) for f in files], ignore_index=True)
+    record = store.replace("us.ark_trades", parse_trades(raw).drop_duplicates(), source="arkfunds", note="imported")
+    report(f"us.ark_trades: {record['rows']} rows {record['start']}..{record['end']}")
+    return record
+
+
+def import_eastmoney_csvs(store: Store, root, report=print):
+    """akshare bond_zh_cov_value_analysis frames saved as <code>.csv (Chinese headers)."""
+    from .sources.eastmoney import parse_value_analysis
+
+    root = Path(root).expanduser()
+    frames, done = [], []
+    codes = {}
+    if store.table_path("cb.basic").is_file():
+        basic = store.read("cb.basic")
+        codes = {sym.split(".")[0]: sym for sym in basic["symbol"]}
+    for path in sorted(root.glob("*.csv")):
+        raw = pd.read_csv(path)
+        symbol = codes.get(path.stem, path.stem + (".SH" if path.stem.startswith(("11", "13")) else ".SZ"))
+        frame = parse_value_analysis(raw, symbol)
+        done.append(symbol)
+        if len(frame):
+            frames.append(frame)
+    frame = pd.concat(frames, ignore_index=True)
+    record = store.upsert("cb.premium", frame, keys=("date", "symbol"), done=done, source="eastmoney", note="imported")
+    report(f"cb.premium: {record['rows']} rows, {len(done)} bonds")
     return record

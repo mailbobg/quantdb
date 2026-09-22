@@ -18,8 +18,12 @@ class Eastmoney(Source):
         raw = ak.bond_zh_cov_value_analysis(symbol=code)
         if raw is None or raw.empty:
             return EMPTY.copy()
-        out = pd.DataFrame({"date": pd.to_datetime(raw["日期"], errors="coerce"), "symbol": key.split("@")[0],
-                            "close": pd.to_numeric(raw["收盘价"], errors="coerce"), "bond_value": pd.to_numeric(raw["纯债价值"], errors="coerce"),
-                            "conv_value": pd.to_numeric(raw["转股价值"], errors="coerce"), "bond_premium": pd.to_numeric(raw["纯债溢价率"], errors="coerce"),
-                            "conv_premium": pd.to_numeric(raw["转股溢价率"], errors="coerce")})
-        return out.dropna(subset=["date"])
+        return parse_value_analysis(raw, key.split("@")[0])
+
+
+def parse_value_analysis(raw, symbol):
+    out = pd.DataFrame({"date": pd.to_datetime(raw["日期"], errors="coerce"), "symbol": symbol,
+                        "close": pd.to_numeric(raw["收盘价"], errors="coerce"), "bond_value": pd.to_numeric(raw["纯债价值"], errors="coerce"),
+                        "conv_value": pd.to_numeric(raw["转股价值"], errors="coerce"), "bond_premium": pd.to_numeric(raw["纯债溢价率"], errors="coerce"),
+                        "conv_premium": pd.to_numeric(raw["转股溢价率"], errors="coerce")})
+    return out.dropna(subset=["date"])

@@ -9,7 +9,8 @@ Layout::
       .env                             secrets for the sources (never in a repository)
 
 A table is a pandas frame with columns ``date`` (datetime64), ``symbol`` (str) and its fields; ``upsert``
-replaces rows by (date, symbol) plus any extra key columns the caller names, so re-fetching a key is safe.
+replaces every stored row whose ``keys`` columns match a row of the new frame (by default the whole date), so
+re-fetching a key is safe and a name may have several rows a day (block trades, unlock lots, restatements).
 Keys already fetched are remembered in the meta record (``done``), which is what makes refreshes incremental.
 """
 import json
@@ -59,7 +60,7 @@ class Store:
         return sorted(p.stem for p in (self.root / "tables").glob("*.parquet"))
 
     # ---- write ------------------------------------------------------------------------------------------------
-    def upsert(self, name, frame: pd.DataFrame, keys=("date", "symbol"), done=None, source=None, note=None):
+    def upsert(self, name, frame: pd.DataFrame, keys=("date",), done=None, source=None, note=None):
         """Merge ``frame`` into the table, replacing rows with the same ``keys``; record which fetch keys are done."""
         frame = _normalise(frame)
         path = self.table_path(name)
@@ -68,12 +69,13 @@ class Store:
             old = pd.read_parquet(path)
             old, frame = _align(old, frame)
             if len(frame):
-                mask = pd.MultiIndex.from_frame(old[list(keys)]).isin(pd.MultiIndex.from_frame(frame[list(keys)]))
+                keys = list(keys)
+                mask = old[keys[0]].isin(frame[keys[0]]) if len(keys) == 1 else pd.MultiIndex.from_frame(old[keys]).isin(pd.MultiIndex.from_frame(frame[keys]))
                 old = old[~mask]
             merged = pd.concat([old, frame], ignore_index=True)
         else:
             merged = frame
-        merged = merged.sort_values(["date", "symbol"]).reset_index(drop=True)
+        merged = merged.sort_values(["date", "symbol"], kind="stable").reset_index(drop=True)
         merged.to_parquet(path, index=False)
         record = self.meta(name)
         record.update({"rows": int(len(merged)), "columns": list(merged.columns), "updated": _now(),
@@ -96,7 +98,7 @@ class Store:
         path = self.table_path(name)
         if path.is_file():
             self._snapshot(name)
-        frame = frame.sort_values(["date", "symbol"]).reset_index(drop=True)
+        frame = frame.sort_values(["date", "symbol"], kind="stable").reset_index(drop=True)
         frame.to_parquet(path, index=False)
         record = {"table": name, "done": [], "rows": int(len(frame)), "columns": list(frame.columns), "updated": _now(),
                   "start": str(frame["date"].min().date()) if len(frame) else None, "end": str(frame["date"].max().date()) if len(frame) else None,

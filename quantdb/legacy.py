@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import schema
-from .recorders import EXTRA_KEYS
+from .recorders import replace_keys
 from .sources.base import qlib_code
 from .store import Store
 
@@ -61,8 +61,7 @@ def import_files(store: Store, table: str, paths, date_col="date", symbol_col="s
         keys = done.split(",")
     if t.key == "snapshot":
         return store.replace(table, frame, source=source, note="imported")
-    extra = [c for c in EXTRA_KEYS.get(table, ()) if c in frame.columns]
-    record = store.upsert(table, frame.drop_duplicates(["date", "symbol", *extra]), keys=("date", "symbol", *extra), done=keys, source=source, note="imported")
+    record = store.upsert(table, frame, keys=replace_keys(t), done=keys, source=source, note="imported")
     if keys and t.key in ("day", "period", "week") and not record.get("plan_start"):
         record["plan_start"] = str(pd.Timestamp(min(keys)).date())  # refreshes continue from where the cache began
         store._write_meta(table, record)

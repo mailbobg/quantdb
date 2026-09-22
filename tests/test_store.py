@@ -17,8 +17,10 @@ def test_upsert_replaces_same_keys_and_tracks_done(tmp_path):
     store.upsert("cn.t", frame(["2025-01-02"], ["SZ000001", "SH600000"]), done=["20250102"], source="test")
     store.upsert("cn.t", frame(["2025-01-02", "2025-01-03"], ["SZ000001"], 2.0), done=["20250103"])
     got = store.read("cn.t")
-    assert len(got) == 3
+    assert len(got) == 2  # the whole 01-02 was replaced by the re-fetch (SH600000 gone), 01-03 added
     assert got.set_index(["date", "symbol"]).loc[(pd.Timestamp("2025-01-02"), "SZ000001"), "x"] == 2.0
+    store.upsert("cn.t", frame(["2025-01-02"], ["SH600000"], 3.0), keys=("date", "symbol"))
+    assert len(store.read("cn.t")) == 3  # by (date, symbol): the other name of that day stays
     meta = store.meta("cn.t")
     assert meta["done"] == ["20250102", "20250103"] and meta["source"] == "test" and meta["rows"] == 3
     assert (tmp_path / "snapshots" / "cn.t").exists()

@@ -172,8 +172,7 @@ class Recorder:
                 self.store.replace(table.name, pd.concat(frames, ignore_index=True), source=source)
             return
         frame = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["date", "symbol"])
-        extra = [c for c in EXTRA_KEYS.get(table.name, ()) if c in frame.columns]
-        self.store.upsert(table.name, frame, keys=("date", "symbol", *extra), done=keys, source=source)
+        self.store.upsert(table.name, frame, keys=replace_keys(table), done=keys, source=source)
 
     def refresh_all(self, namespace=None, **kw):
         out = []
@@ -184,12 +183,11 @@ class Recorder:
         return out
 
 
-# Tables where (date, symbol) is not unique: the extra columns that make a row identity.
-EXTRA_KEYS = {
-    "cn.unlock": ("holder_name",), "cn.block": ("price", "vol", "buyer", "seller"), "cn.toplist": ("reason",), "cn.holders": ("end_date",),
-    "cn.forecast": ("ann_date", "type"), "cn.insider": ("changer", "change_shares"), "us.form4": ("accession", "trans_date", "trans_code", "shares", "price"),
-    "us.ark_trades": ("fund", "direction"), "us.earnings_calendar": (), "alt.appstore_top": (), "cb.premium": (), "fut.cffex": (),
-}
+def replace_keys(table):
+    """What a fetch replaces. Day, period and week fetches return every row of their dates, so the stored rows of
+    those dates are replaced wholesale (a name can have several rows a day: block trades, unlock lots,
+    restatements). Symbol fetches extend one instrument, so they replace by (date, symbol)."""
+    return ("date", "symbol") if table.key == "symbol" else ("date",)
 
 
 def refresh(name, **kw):

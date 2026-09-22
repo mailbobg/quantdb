@@ -65,8 +65,8 @@ register(Table("cn.basic", "day", ("tushare",), "Daily valuation and size (Tusha
 register(Table("cn.toplist", "day", ("tushare", "adata"), "Dragon-tiger list appearances (Tushare top_list).",
                {"net_amount": "net buy of the listed seats, yuan", "reason": "listing reason"}))
 register(Table("cn.block", "day", ("tushare", "adata"), "Block trades (Tushare block_trade).", {"price": "", "vol": "万股", "amount": "万元", "buyer": "", "seller": ""}))
-register(Table("cn.fina", "period", ("tushare",), "Financial indicators per report period (Tushare fina_indicator_vip).",
-               {"ann_date": "announcement date", "end_date": "period end", "roe": "%", "netprofit_yoy": "%", "or_yoy": "%", "grossprofit_margin": "%", "debt_to_assets": "%", "ocfps": "", "bps": ""},
+register(Table("cn.fina", "period", ("tushare",), "Financial indicators per report period (Tushare fina_indicator_vip); a period may carry several rows (restatements: update_flag 0 then 1).",
+               {"ann_date": "announcement date", "update_flag": "1 = latest version of the period", "end_date": "period end", "roe": "%", "netprofit_yoy": "%", "or_yoy": "%", "grossprofit_margin": "%", "debt_to_assets": "%", "ocfps": "", "bps": ""},
                date_field="end_date", open_days=150))
 register(Table("cn.forecast", "period", ("tushare",), "Earnings forecasts (Tushare forecast_vip).", {"ann_date": "", "type": "预增/预减/…", "p_change_min": "%", "p_change_max": "%"}, date_field="end_date", open_days=150))
 register(Table("cn.express", "period", ("tushare",), "Earnings express reports (Tushare express_vip).", {"ann_date": "", "n_income": "net income", "yoy_net_profit": "last year's net income (not a rate)"}, date_field="end_date", open_days=150))

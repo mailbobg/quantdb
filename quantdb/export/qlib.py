@@ -1,7 +1,8 @@
 """Write a Qlib provider directory from quantdb's A-share tables, so the backtest engine keeps reading the
 format it knows while quantdb is the only place data is fetched into.
 
-    calendars/day.txt            trading days = the dates in cn.daily from ``start``
+    calendars/day.txt            trading days = the complete dates in cn.daily from ``start`` (a day still
+                                 arriving is left out: ``through`` defaults to the last day marked done)
     instruments/all.txt          every name with its first and last trading day in the window
     instruments/csi300.txt …     index membership spans from cn.index_members (month ends → spans)
     features/<code>/<field>.day.bin   float32, first value = the index of the first day in the calendar
@@ -23,8 +24,17 @@ FIELDS = ("open", "high", "low", "close", "volume", "factor", "amount")
 INDEXES = {"000300.SH": "csi300", "000905.SH": "csi500", "000852.SH": "csi1000"}
 
 
-def export_qlib(store, out_dir, start="2015-01-01", report=lambda msg: None) -> dict:
+def complete_through(store, table="cn.daily"):
+    """The last trading day the store considers finished (its key is marked done), so a day still arriving does
+    not reach the provider as a short one."""
+    done = store.meta(table).get("done") or []
+    keys = [k for k in done if k.isdigit() and len(k) == 8]
+    return pd.Timestamp(max(keys)) if keys else None
+
+
+def export_qlib(store, out_dir, start="2015-01-01", through=None, report=lambda msg: None) -> dict:
     out_dir = Path(out_dir).expanduser()
+    through = pd.Timestamp(through) if through is not None else complete_through(store)
     staging = out_dir.parent / f"{out_dir.name}.new"
     if staging.exists():
         shutil.rmtree(staging)
@@ -32,8 +42,8 @@ def export_qlib(store, out_dir, start="2015-01-01", report=lambda msg: None) -> 
         (staging / sub).mkdir(parents=True)
 
     report("reading cn.daily and cn.adj_factor")
-    daily = store.read("cn.daily", start=start, columns=["open", "high", "low", "close", "vol", "amount"])
-    adj = store.read("cn.adj_factor", start=start, columns=["adj_factor"])
+    daily = store.read("cn.daily", start=start, end=through, columns=["open", "high", "low", "close", "vol", "amount"])
+    adj = store.read("cn.adj_factor", start=start, end=through, columns=["adj_factor"])
     frame = daily.merge(adj, on=["date", "symbol"], how="left")
     frame = frame[frame["symbol"].str[:2].isin(["SH", "SZ"])].sort_values(["symbol", "date"])
     frame["adj_factor"] = frame.groupby("symbol")["adj_factor"].ffill()
@@ -79,7 +89,7 @@ def export_qlib(store, out_dir, start="2015-01-01", report=lambda msg: None) -> 
         out_dir.rename(backup)
     staging.rename(out_dir)
     shutil.rmtree(backup, ignore_errors=True)
-    return {"dir": str(out_dir), "days": len(calendar), "start": str(calendar[0].date()), "end": str(calendar[-1].date()), "instruments": written}
+    return {"dir": str(out_dir), "days": len(calendar), "through": str(through.date()) if through is not None else None, "start": str(calendar[0].date()), "end": str(calendar[-1].date()), "instruments": written}
 
 
 def membership_spans(rows, calendar):

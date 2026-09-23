@@ -195,3 +195,15 @@ def test_a_thinner_fetch_never_replaces_a_fuller_stored_day(tmp_path, monkeypatc
     rec.refresh("cn.fake_day", start="2025-01-06", end="2025-01-06")
     got = rec.store.read("cn.fake_day")
     assert len(got) == 12 and set(got["x"]) == {2.0}  # a fuller answer replaces it
+
+
+def test_day_keys_follow_the_store_own_trading_calendar(tmp_path, monkeypatch, registry):
+    """cn.trade_cal decides which days are planned, so planning never depends on the Qlib provider quantdb feeds."""
+    store = Store(tmp_path)
+    (tmp_path / ".env").write_text("")
+    rec = Recorder(store, Config(tmp_path))
+    days = pd.date_range("2025-01-01", "2025-01-10")  # includes a holiday (01-01) and a weekend
+    cal = pd.DataFrame({"date": days, "symbol": "SSE", "is_open": [0, 1, 1, 0, 0, 1, 1, 1, 1, 1]})
+    store.upsert("cn.trade_cal", cal, keys=("date", "symbol"))
+    keys = rec.keys(schema.get("cn.fake_day"), start="2025-01-01", end="2025-01-10")
+    assert keys == ["20250102", "20250103", "20250106", "20250107", "20250108", "20250109", "20250110"]

@@ -37,3 +37,15 @@ def test_export_writes_qlib_bins_and_spans(tmp_path):
     assert csi == ["SH600000\t2025-01-02\t2025-01-07", "SZ000001\t2025-01-08\t2025-01-08"]  # list of day 2 holds through day 5's list; then the new list
     # a second export swaps cleanly
     assert export_qlib(store, out)["days"] == 6 and not (tmp_path / "cn_data.new").exists()
+
+
+def test_export_stops_at_the_last_complete_day(tmp_path):
+    store = Store(tmp_path / "db")
+    days = pd.bdate_range("2025-01-01", periods=3)
+    rows = [{"date": d, "symbol": "SH600000", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0 + i, "vol": 10.0, "amount": 5.0} for i, d in enumerate(days)]
+    store.upsert("cn.daily", pd.DataFrame(rows), done=[d.strftime("%Y%m%d") for d in days[:2]])  # the last day is still arriving
+    store.upsert("cn.adj_factor", pd.DataFrame([{"date": d, "symbol": "SH600000", "adj_factor": 1.0} for d in days]))
+    result = export_qlib(store, tmp_path / "cn_data")
+    assert result["days"] == 2 and result["through"] == str(days[1].date())
+    assert (tmp_path / "cn_data" / "calendars" / "day.txt").read_text().split()[-1] == str(days[1].date())
+    assert export_qlib(store, tmp_path / "cn_data", through=str(days[2].date()))["days"] == 3

@@ -26,7 +26,7 @@ SLICE = {"daily": 600, "adj_factor": 600, "moneyflow": 600, "daily_basic": 200, 
 
 API = {  # table -> (tushare interface, how the key maps to parameters, paged-only)
     "cn.daily": ("daily", "day", False), "cn.adj_factor": ("adj_factor", "day", False),
-    "cn.stock_basic": ("stock_basic", "stock_basic", False), "cn.index_members": ("index_weight", "index_months", False),
+    "cn.stock_basic": ("stock_basic", "stock_basic", False), "cn.trade_cal": ("trade_cal", "trade_cal", False), "cn.index_members": ("index_weight", "index_months", False),
     "cn.moneyflow": ("moneyflow", "day", False), "cn.margin": ("margin_detail", "day", False), "cn.chips": ("cyq_perf", "day", False),
     "cn.basic": ("daily_basic", "day", False), "cn.toplist": ("top_list", "day", False), "cn.block": ("block_trade", "day", False),
     "cn.fina": ("fina_indicator_vip", "period", False), "cn.forecast": ("forecast_vip", "period", False), "cn.express": ("express_vip", "period", False),
@@ -123,6 +123,20 @@ class TushareReseller(Source):
         out["date"] = pd.to_datetime(out["list_date"], format="%Y%m%d", errors="coerce").fillna(pd.Timestamp("1900-01-01"))
         return out.dropna(subset=["symbol"]).drop(columns=["ts_code"])
 
+    def _trade_cal(self):
+        """Every calendar day of both exchanges from 2015 to the end of next year, a year at a time (a call is
+        capped well below a year's rows)."""
+        frames = []
+        for year in range(2015, pd.Timestamp.today().year + 2):
+            for exchange in ("SSE", "SZSE"):
+                frame = self._query("trade_cal", {"exchange": exchange, "start_date": f"{year}0101", "end_date": f"{year}1231"})
+                if frame is not None and len(frame):
+                    frames.append(frame)
+        raw = pd.concat(frames, ignore_index=True)
+        return pd.DataFrame({"date": pd.to_datetime(raw["cal_date"], format="%Y%m%d"), "symbol": raw["exchange"].astype(str),
+                             "exchange": raw["exchange"].astype(str), "is_open": pd.to_numeric(raw["is_open"], errors="coerce"),
+                             "pretrade_date": raw.get("pretrade_date")}).dropna(subset=["date"])
+
     def _index_members(self, key):
         """Month-end constituents of one index from the resume date on (one call per month: a call is capped)."""
         code, _, since = key.partition("@")
@@ -206,6 +220,8 @@ class TushareReseller(Source):
         api, kind, paged = API[table]
         if kind == "stock_basic":
             return self._stock_basic()
+        if kind == "trade_cal":
+            return self._trade_cal()
         if kind == "index_months":
             return self._index_members(key)
         if kind == "day":

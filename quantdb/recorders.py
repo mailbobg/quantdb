@@ -34,6 +34,7 @@ class Recorder:
         self.config = config or Config(self.store.root)
         self.report = report or (lambda event: None)
         self._sources = {}
+        self._trading_days = None
 
     def source(self, name):
         if name not in self._sources:
@@ -42,15 +43,31 @@ class Recorder:
 
     # ---- key planning -----------------------------------------------------------------------------------------
     def calendar(self, table: schema.Table):
+        """The trading days a day-keyed table is planned over: quantdb's own exchange calendar when it holds one,
+        else the local Qlib provider, else plain business days. The store's calendar comes first so planning never
+        depends on the provider quantdb itself exports."""
+        market = "us" if table.namespace == "us" else "cn"
+        if market == "cn":
+            own = self.trading_days()
+            if own is not None:
+                return own
         from .sources.qlib_bridge import calendar
 
-        market = "us" if table.namespace == "us" else "cn"
         try:
             cal = calendar(self.config, market)
         except FileNotFoundError:
             return pd.bdate_range(DEFAULT_START, date.today())
         tail = pd.bdate_range(cal[-1] + pd.Timedelta(days=1), date.today())  # the provider lags a day or two
         return cal.append(tail) if len(tail) else cal
+
+    def trading_days(self):
+        """A-share trading days from cn.trade_cal, or None when it has not been fetched."""
+        if self._trading_days is None:
+            if not self.store.table_path("cn.trade_cal").is_file():
+                return None
+            days = self.store.sql('SELECT DISTINCT date FROM "cn"."trade_cal" WHERE is_open = 1 ORDER BY date')
+            self._trading_days = pd.DatetimeIndex(pd.to_datetime(days["date"]))
+        return self._trading_days
 
     def keys(self, table: schema.Table, start=None, end=None, symbols=None) -> list[str]:
         meta = self.store.meta(table.name)

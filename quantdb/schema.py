@@ -53,6 +53,8 @@ def get(name: str) -> Table:
 
 
 # ---- A-shares: prices and reference (Tushare) -----------------------------------------------------------------
+register(Table("cn.trade_cal", "snapshot", ("tushare",), "Exchange trading calendar (Tushare trade_cal), one row per exchange per calendar day, 2015 → next year.",
+               {"is_open": "1 on a trading day", "pretrade_date": "the previous trading day", "exchange": "SSE/SZSE"}))
 register(Table("cn.daily", "day", ("tushare",), "A-share daily bars, unadjusted (Tushare daily): prices in yuan, vol in 手 (100 shares), amount in 千元.",
                {"open": "", "high": "", "low": "", "close": "", "pre_close": "", "change": "", "pct_chg": "%", "vol": "手", "amount": "千元"}))
 register(Table("cn.adj_factor", "day", ("tushare",), "Cumulative adjustment factor per name per day (Tushare adj_factor); adjusted price = raw × adj_factor / adj_factor(base).",

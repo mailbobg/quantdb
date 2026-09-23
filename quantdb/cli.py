@@ -92,7 +92,7 @@ def main(argv=None):
     i.add_argument("--date-col", default="date"); i.add_argument("--symbol-col", default="symbol"); i.add_argument("--done", help="mark these keys done: 'from-dates' or comma list")
     st = sub.add_parser("import-studio", help="load RD-Agent Studio's extra/ cache (tushare + baostock)"); st.add_argument("root")
     bf = sub.add_parser("backfill-prices", help="first load of cn.daily / cn.adj_factor per instrument through the REST server"); bf.add_argument("--start", default="2015-01-01"); bf.add_argument("--workers", type=int, default=4)
-    ex = sub.add_parser("export-qlib"); ex.add_argument("dir"); ex.add_argument("--start", default="2015-01-01")
+    ex = sub.add_parser("export-qlib"); ex.add_argument("dir"); ex.add_argument("--start", default="2015-01-01"); ex.add_argument("--through", help="last trading day to include (default: the last one marked done)")
     f = sub.add_parser("forget"); f.add_argument("table"); f.add_argument("keys", nargs="+")
     a = p.parse_args(argv)
     store = Store(a.home)
@@ -135,7 +135,7 @@ def main(argv=None):
     elif a.cmd == "export-qlib":
         from .export.qlib import export_qlib
 
-        print(export_qlib(store, a.dir, start=a.start, report=lambda m: print(m, flush=True)))
+        print(export_qlib(store, a.dir, start=a.start, through=a.through, report=lambda m: print(m, flush=True)))
     elif a.cmd == "forget":
         store.forget(a.table, a.keys)
         print("ok")

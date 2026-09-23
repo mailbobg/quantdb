@@ -18,6 +18,8 @@ def test_export_writes_qlib_bins_and_spans(tmp_path):
     store.upsert("cn.adj_factor", pd.DataFrame(adj))
     store.upsert("cn.index_members", pd.DataFrame([{"date": days[1], "symbol": "000300.SH", "con_code": "SH600000", "weight": 1.0},
                                                     {"date": days[4], "symbol": "000300.SH", "con_code": "SZ000001", "weight": 1.0}]), keys=("date", "symbol"))
+    store.upsert("cn.index_daily", pd.DataFrame([{"date": d, "symbol": "SH000300", "open": 4000.0, "high": 4000.0, "low": 4000.0, "close": 4000.0 + i, "vol": 1.0, "amount": 1.0}
+                                                  for i, d in enumerate(days)]), keys=("date", "symbol"))
     out = tmp_path / "cn_data"
     result = export_qlib(store, out)
     assert result["days"] == 6 and result["instruments"]["all"] == 2
@@ -31,6 +33,8 @@ def test_export_writes_qlib_bins_and_spans(tmp_path):
     assert volume[4] == np.float32(1000.0 / 2.0)
     other = np.fromfile(out / "features" / "sz000001" / "close.day.bin", dtype="<f4")
     assert other[0] == 2 and len(other) == 5  # starts on the third calendar day
+    index_close = np.fromfile(out / "features" / "sh000300" / "close.day.bin", dtype="<f4")
+    assert index_close[0] == 0 and index_close[-1] == 4005.0  # the benchmark is there
     spans = (out / "instruments" / "all.txt").read_text().splitlines()
     assert spans == ["SH600000\t2025-01-01\t2025-01-08", "SZ000001\t2025-01-03\t2025-01-08"]
     csi = (out / "instruments" / "csi300.txt").read_text().splitlines()

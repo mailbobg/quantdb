@@ -87,6 +87,12 @@ register(Table("cn.unlock", "week", ("tushare",), "Share unlock schedule by unlo
 register(Table("cn.baostock", "symbol", ("baostock",), "Daily turnover, valuation, float cap and ST flag per name (baostock).",
                {"turn": "turnover %", "peTTM": "", "pbMRQ": "", "psTTM": "", "pcfNcfTTM": "", "isST": "", "amount": "yuan"}, universe="cn.all"))
 register(Table("cn.index_daily", "symbol", ("tushare",), "Index daily bars (Tushare index_daily).", {"open": "", "high": "", "low": "", "close": "", "vol": "", "amount": ""}, universe="cn.indices"))
+register(Table("cn.repurchase", "week", ("tushare",), "Share buyback announcements by stage (Tushare repurchase), by announcement week.",
+               {"ann_date": "", "end_date": "as-of date of the figures", "proc": "预案/股东大会通过/实施/完成/停止", "exp_date": "plan expiry",
+                "vol": "shares bought so far", "amount": "yuan bought so far", "high_limit": "price or amount cap", "low_limit": ""}, date_field="ann_date", open_weeks=2))
+register(Table("cn.holdertrade", "week", ("tushare",), "Shareholder increases/decreases (Tushare stk_holdertrade): company, individual and officer holders, by announcement week.",
+               {"ann_date": "", "holder_name": "", "holder_type": "C company / P individual / G officer", "in_de": "IN / DE", "change_vol": "shares",
+                "change_ratio": "% of total shares", "after_share": "", "after_ratio": "%", "avg_price": ""}, date_field="ann_date", open_weeks=2))
 register(Table("cn.insider", "week", ("ftshare",), "Officer/director share changes (FTShare 董监高持股变动, Eastmoney).",
                {"change_date": "", "notice_date": "", "change_direction": "增持/减持", "change_shares": "", "change_ratio": "% of total shares", "avg_price": "", "change_amount": "yuan", "shares_after": "", "executive_name": "the officer", "changer": "who traded (self or related party)", "relation": "本人/受控法人/…", "position": "", "change_reason": "竞价交易/大宗交易/询价转让/…"}, date_field="change_date", open_weeks=2))
 

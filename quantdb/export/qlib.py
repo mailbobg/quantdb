@@ -6,6 +6,7 @@ format it knows while quantdb is the only place data is fetched into.
     instruments/all.txt          every name with its first and last trading day in the window
     instruments/csi300.txt …     index membership spans from cn.index_members (month ends → spans)
     features/<code>/<field>.day.bin   float32, first value = the index of the first day in the calendar
+    features/sh000300/ …         index bars from cn.index_daily (benchmarks and hedges; not in any universe file)
 
 Fields follow the community snapshot's conventions so factor code keeps its meaning: ``$open $high $low $close``
 are adjusted prices (raw × factor), ``$factor`` = adj_factor / adj_factor on the name's first day in the window
@@ -70,6 +71,23 @@ def export_qlib(store, out_dir, start="2015-01-01", through=None, report=lambda 
             values.astype("<f4").tofile(folder / f"{field}.day.bin")
         spans.append(f"{symbol}\t{calendar[first].date()}\t{calendar[last].date()}")
     (staging / "instruments" / "all.txt").write_text("\n".join(spans) + "\n")
+
+    # Indices (benchmarks, hedges): features only, never members of a stock universe. Unadjusted, factor 1.
+    if store.table_path("cn.index_daily").is_file():
+        index = store.read("cn.index_daily", start=calendar[0], end=calendar[-1], columns=["open", "high", "low", "close", "vol", "amount"])
+        for symbol, rows in index.groupby("symbol", sort=True):
+            rows = rows.set_index("date").reindex(calendar)
+            rows = rows.loc[rows["close"].first_valid_index():]
+            if rows.empty:
+                continue
+            folder = staging / "features" / symbol.lower()
+            folder.mkdir(exist_ok=True)
+            first = position[rows.index[0]]
+            fields = {"open": rows["open"], "high": rows["high"], "low": rows["low"], "close": rows["close"],
+                      "volume": rows["vol"], "factor": rows["close"] * 0 + 1.0, "amount": rows["amount"] * 1000.0}
+            for field, values in fields.items():
+                np.concatenate([[np.float32(first)], values.to_numpy(dtype="<f4")]).astype("<f4").tofile(folder / f"{field}.day.bin")
+        report(f"wrote {index['symbol'].nunique()} indices")
 
     written = {"all": len(spans)}
     if store.table_path("cn.index_members").is_file():

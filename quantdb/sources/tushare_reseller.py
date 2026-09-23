@@ -30,7 +30,8 @@ API = {  # table -> (tushare interface, how the key maps to parameters, paged-on
     "cn.moneyflow": ("moneyflow", "day", False), "cn.margin": ("margin_detail", "day", False), "cn.chips": ("cyq_perf", "day", False),
     "cn.basic": ("daily_basic", "day", False), "cn.toplist": ("top_list", "day", False), "cn.block": ("block_trade", "day", False),
     "cn.fina": ("fina_indicator_vip", "period", False), "cn.forecast": ("forecast_vip", "period", False), "cn.express": ("express_vip", "period", False),
-    "cn.holders": ("stk_holdernumber", "week", False), "cn.unlock": ("share_float", "week", True),
+    "cn.holders": ("stk_holdernumber", "week", False), "cn.repurchase": ("repurchase", "week", False),
+    "cn.holdertrade": ("stk_holdertrade", "week", False), "cn.unlock": ("share_float", "week", True),
     "cn.index_daily": ("index_daily", "symbol", False), "cb.basic": ("cb_basic", "snapshot", False), "cb.daily": ("cb_daily", "day", False),
     "fut.cffex": ("fut_daily", "symbol", False),
 }
@@ -238,7 +239,7 @@ class TushareReseller(Source):
         elif kind == "week":
             monday = pd.Timestamp(key)
             raw = self._query(api, {"start_date": compact(monday), "end_date": compact(monday + timedelta(days=6))}, paged)
-            date_col = "float_date" if table == "cn.unlock" else "ann_date"
+            date_col = "float_date" if table == "cn.unlock" else "ann_date"  # every other week table is dated by announcement
         elif kind == "symbol":
             code = key if "." in key else f"{key[2:]}.{key[:2]}"
             raw = self._query(api, {"ts_code": code}, paged)

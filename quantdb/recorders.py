@@ -210,7 +210,36 @@ class Recorder:
                 self.store.replace(table.name, pd.concat(frames, ignore_index=True), source=source)
             return
         frame = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["date", "symbol"])
-        self.store.upsert(table.name, frame, keys=replace_keys(table), done=keys, source=source)
+        frame, thin = self._keep_fuller_days(table, frame)
+        self.store.upsert(table.name, frame, keys=replace_keys(table), done=[k for k in keys if k not in thin], source=source)
+
+    @staticmethod
+    def _key_of(table, day):
+        """The fetch key a stored date belongs to (a week table's key is its Monday)."""
+        day = pd.Timestamp(day)
+        if table.key == "week":
+            day -= timedelta(days=day.weekday())
+        return day.strftime("%Y%m%d")
+
+    def _keep_fuller_days(self, table, frame):
+        """Drop the dates where the fetch came back with fewer rows than the store already holds. A day, period or
+        week fetch replaces its whole date, so a truncated or half-published answer would otherwise destroy a
+        fuller stored day; the key stays unfinished either way, so the next run tries again."""
+        if table.key == "symbol" or frame.empty or not self.store.table_path(table.name).is_file():
+            return frame, set()
+        ns, short = table.name.split(".", 1)
+        stored = self.store.sql(f'SELECT date, count(*) AS n FROM "{ns}"."{short}" GROUP BY date')
+        if stored.empty:
+            return frame, set()
+        have = dict(zip(pd.to_datetime(stored["date"]), stored["n"]))
+        fetched = frame.groupby("date").size()
+        thin = [day for day, n in fetched.items() if have.get(pd.Timestamp(day), 0) > n]
+        if not thin:
+            return frame, set()
+        for day in thin:
+            self.report({"table": table.name, "event": "thin", "key": pd.Timestamp(day).strftime("%Y%m%d"),
+                         "rows": int(fetched[day]), "stored": int(have[pd.Timestamp(day)])})
+        return frame[~frame["date"].isin(thin)], {self._key_of(table, day) for day in thin}
 
     def refresh_all(self, namespace=None, **kw):
         out = []

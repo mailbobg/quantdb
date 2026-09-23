@@ -14,12 +14,15 @@ from datetime import timedelta
 
 import pandas as pd
 
-from .base import EMPTY, Source, compact, qlib_code
+from .base import EMPTY, Source, compact, qlib_code, ts_code
 
 MIRROR_CAP = 6000
 ROW_CAP = 5000
 MIRROR_PACE, MAIN_PACE = 1.5, 0.5
 MAIN_ALIAS = {"express_vip": "express"}  # the REST front has no *_vip for express; its express takes period and pages
+# Codes per call when a whole-market day exceeds a server's row cap. The REST front takes a comma-separated
+# ts_code list on some interfaces only, and each has its own ceiling (above it the answer comes back empty).
+SLICE = {"daily": 600, "adj_factor": 600, "moneyflow": 600, "daily_basic": 200, "cyq_perf": 200}
 
 API = {  # table -> (tushare interface, how the key maps to parameters, paged-only)
     "cn.daily": ("daily", "day", False), "cn.adj_factor": ("adj_factor", "day", False),
@@ -142,6 +145,7 @@ class TushareReseller(Source):
     def __init__(self, config):
         super().__init__(config)
         self.mirror = self.main = None
+        self._universe = None
         if config.get("TUSHARE_MIRROR_TOKEN") and config.get("TUSHARE_MIRROR_URL"):
             self.mirror = _Mirror(config.get("TUSHARE_MIRROR_TOKEN"), config.get("TUSHARE_MIRROR_URL"))
         if config.get("DATAHUB_API_KEY") and config.get("DATAHUB_BASE"):
@@ -164,7 +168,39 @@ class TushareReseller(Source):
             except Exception as error:  # noqa: BLE001
                 last = error
                 time.sleep(3)
+        if isinstance(last, (Capped, Truncated)):  # no server could return the whole answer: the caller may slice it
+            raise Truncated(f"{api} {params}: {last}") from last
         raise RuntimeError(f"{api} {params}: {last}")
+
+    def day_universe(self):
+        """Every A-share code the store knows, for slicing a whole-market day the servers cannot answer at once."""
+        if self._universe is None:
+            import quantdb
+
+            store = quantdb.open()
+            names = []
+            for table in ("cn.stock_basic", "cn.daily"):
+                if store.table_path(table).is_file():
+                    names = sorted(set(store.sql(f'SELECT DISTINCT symbol AS s FROM "cn"."{table.split(".")[1]}"')["s"]))
+                    if names:
+                        break
+            self._universe = [ts_code(n) for n in names if n[:2] in ("SH", "SZ")]
+        return self._universe
+
+    def _sliced_day(self, api, params):
+        """A market-wide day in code slices: the mirror caps at 6000 rows and the REST front returns at most 5000
+        with no working paging, so once a day outgrows them it is fetched a few hundred codes at a time."""
+        codes = self.day_universe()
+        if not codes:
+            raise RuntimeError(f"{api}: cannot slice a day without a known universe (refresh cn.stock_basic first)")
+        size = SLICE[api]
+        frames = []
+        for start in range(0, len(codes), size):
+            frames.append(self._query(api, {**params, "ts_code": ",".join(codes[start:start + size])}))
+        parts = [f for f in frames if f is not None and len(f)]
+        if not parts:
+            raise RuntimeError(f"{api}: slicing returned nothing for {params}")
+        return pd.concat(parts, ignore_index=True)
 
     def fetch(self, table, key):
         api, kind, paged = API[table]
@@ -173,7 +209,12 @@ class TushareReseller(Source):
         if kind == "index_months":
             return self._index_members(key)
         if kind == "day":
-            raw = self._query(api, {"trade_date": key}, paged)
+            try:
+                raw = self._query(api, {"trade_date": key}, paged)
+            except Truncated:
+                if api not in SLICE:
+                    raise
+                raw = self._sliced_day(api, {"trade_date": key})
             date_col = "trade_date"
         elif kind == "period":
             raw = self._query(api, {"period": key}, paged)

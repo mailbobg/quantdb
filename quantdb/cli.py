@@ -27,6 +27,8 @@ def _report(event):
         print(f"{event['table']}: {event['keys']} keys via {'/'.join(event['sources'])}", flush=True)
     elif kind == "key" and (event["i"] % 20 == 0 or event["i"] == event["n"]):
         print(f"  {event['i']}/{event['n']} {event['key']} {event['rows']} rows ({event['source']})", flush=True)
+    elif kind == "thin":
+        print(f"  thin {event['key']}: {event['rows']} rows vs {event['stored']} already stored; kept the stored day", flush=True)
     elif kind == "partial":
         print(f"  partial {event['key']}: {event['rows']} rows vs a normal {event['typical']:.0f}; kept, fetched again next run", flush=True)
     elif kind == "fail":

@@ -180,3 +180,18 @@ def test_recent_partial_day_is_kept_but_not_done(tmp_path, monkeypatch, registry
     out = rec.refresh("cn.fake_day")
     assert out["keys"] == 1 and out["done"] == 0 and len(rec.store.read("cn.fake_day", start=yesterday)) == 2
     assert yesterday.strftime("%Y%m%d") not in rec.store.meta("cn.fake_day")["done"]
+
+
+def test_a_thinner_fetch_never_replaces_a_fuller_stored_day(tmp_path, monkeypatch, registry):
+    rec = make_recorder(tmp_path, monkeypatch)
+    day = pd.Timestamp("2025-01-06")
+    rec.store.upsert("cn.fake_day", frame([day], [f"S{i}" for i in range(10)]))
+    monkeypatch.setattr(rec, "calendar", lambda table: pd.DatetimeIndex([day]))
+    monkeypatch.setattr(Fake, "fetch", lambda self, table, key: frame([day], ["S0", "S1"]))  # a truncated answer
+    out = rec.refresh("cn.fake_day", start="2025-01-06", end="2025-01-06")
+    assert len(rec.store.read("cn.fake_day")) == 10  # the stored day survived
+    assert out["done"] == 1 and rec.store.meta("cn.fake_day")["done"] == []  # and the key stays unfinished
+    monkeypatch.setattr(Fake, "fetch", lambda self, table, key: frame([day], [f"S{i}" for i in range(12)], 2.0))
+    rec.refresh("cn.fake_day", start="2025-01-06", end="2025-01-06")
+    got = rec.store.read("cn.fake_day")
+    assert len(got) == 12 and set(got["x"]) == {2.0}  # a fuller answer replaces it

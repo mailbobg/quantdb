@@ -143,6 +143,9 @@ class Recorder:
             record = self.store.meta(name); record["plan_start"] = str(pd.Timestamp(start).date()); self.store._write_meta(name, record)
         done, failed, rows = [], [], 0
         batch, batch_keys = [], []
+        # Every commit rewrites the table's Parquet file, so a symbol table with thousands of names commits far less
+        # often than a day table (5,000 baostock names at 50 a commit rewrote a 5-million-row table 100 times a day).
+        commit_every = 500 if table.key == "symbol" else 50
         typical = self._typical_rows(table) if table.key == "day" else None
         if workers > 1:
             from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
@@ -168,7 +171,7 @@ class Recorder:
             if self._complete(table, key, frame, typical):  # recent days may be unpublished or half-published: keep the rows, fetch again next time
                 batch_keys.append(key.split("@")[0] if table.key == "symbol" else key)
             self.report({"table": name, "event": "key", "key": key, "rows": len(frame), "source": used, "i": i, "n": len(keys)})
-            if len(batch_keys) >= 50 or i == len(keys):
+            if len(batch_keys) >= commit_every or i == len(keys):
                 self._commit(table, batch, batch_keys, used)
                 done.extend(batch_keys); batch, batch_keys = [], []
         if batch_keys:

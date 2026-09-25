@@ -82,6 +82,9 @@ register(Table("cn.fina", "period", ("tushare",), "Financial indicators per repo
                date_field="end_date", open_days=150))
 register(Table("cn.forecast", "period", ("tushare",), "Earnings forecasts (Tushare forecast_vip).", {"ann_date": "", "type": "预增/预减/…", "p_change_min": "%", "p_change_max": "%"}, date_field="end_date", open_days=150))
 register(Table("cn.express", "period", ("tushare",), "Earnings express reports (Tushare express_vip).", {"ann_date": "", "n_income": "net income", "yoy_net_profit": "last year's net income (not a rate)"}, date_field="end_date", open_days=150))
+register(Table("cn.dividend", "day", ("tushare",), "Cash and stock dividends by ex-dividend day (Tushare dividend); only rows with an ex-date, i.e. the 实施 stage.",
+               {"end_date": "", "ann_date": "", "div_proc": "预案/股东大会通过/实施", "cash_div_tax": "yuan per share, pre-tax", "cash_div": "after tax", "stk_div": "", "record_date": "", "ex_date": "", "pay_date": "", "imp_ann_date": "实施公告日"},
+               date_field="ex_date"))
 register(Table("cn.holders", "week", ("tushare",), "Shareholder counts by announcement week (Tushare stk_holdernumber).", {"ann_date": "", "end_date": "", "holder_num": ""}, date_field="ann_date", open_weeks=2))
 register(Table("cn.unlock", "week", ("tushare",), "Share unlock schedule by unlock week (Tushare share_float); rows per holder.", {"ann_date": "", "float_date": "unlock date", "float_share": "shares", "float_ratio": "% of total shares"}, date_field="float_date", open_weeks=2, ahead_days=120))
 register(Table("cn.baostock", "symbol", ("baostock",), "Daily turnover, valuation, float cap and ST flag per name (baostock).",
@@ -99,6 +102,9 @@ register(Table("cn.insider", "week", ("ftshare",), "Officer/director share chang
 # ---- Convertible bonds ---------------------------------------------------------------------------------------
 register(Table("cb.basic", "snapshot", ("tushare",), "Convertible bond master (Tushare cb_basic).", {"stk_code": "underlying", "first_conv_price": "", "conv_price": "latest", "list_date": "", "delist_date": "", "maturity_date": ""}))
 register(Table("cb.daily", "day", ("tushare",), "Convertible bond daily bars (Tushare cb_daily).", {"open": "", "high": "", "low": "", "close": "", "vol": "", "amount": ""}))
+register(Table("cb.issue", "week", ("tushare",), "Convertible bond issuance terms by announcement week (Tushare cb_issue): record date and per-share allotment for existing holders.",
+               {"ann_date": "发行公告日", "shd_ration_record_date": "股权登记日", "shd_ration_ratio": "每股配售面值 (yuan)", "shd_ration_size": "", "issue_size": "", "onl_date": "网上申购日", "onl_winning_rate": "%"},
+               date_field="ann_date", open_weeks=2))
 register(Table("cb.premium", "symbol", ("eastmoney",), "Daily conversion value and premium per bond (Eastmoney via akshare bond_zh_cov_value_analysis).",
                {"close": "", "bond_value": "纯债价值", "conv_value": "转股价值", "bond_premium": "纯债溢价率 %", "conv_premium": "转股溢价率 %"}, universe="cb.all"))
 

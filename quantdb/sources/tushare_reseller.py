@@ -24,6 +24,7 @@ MAIN_ALIAS = {"express_vip": "express"}  # the REST front has no *_vip for expre
 # ts_code list on some interfaces only, and each has its own ceiling (above it the answer comes back empty).
 SLICE = {"daily": 600, "adj_factor": 600, "moneyflow": 600, "daily_basic": 200, "cyq_perf": 200}
 
+DAY_PARAM = {"cn.dividend": ("ex_date", "ex_date")}  # day tables keyed by something other than trade_date: (parameter, date column)
 API = {  # table -> (tushare interface, how the key maps to parameters, paged-only)
     "cn.daily": ("daily", "day", False), "cn.adj_factor": ("adj_factor", "day", False),
     "cn.stock_basic": ("stock_basic", "stock_basic", False), "cn.trade_cal": ("trade_cal", "trade_cal", False), "cn.index_members": ("index_weight", "index_months", False),
@@ -33,6 +34,7 @@ API = {  # table -> (tushare interface, how the key maps to parameters, paged-on
     "cn.holders": ("stk_holdernumber", "week", False), "cn.repurchase": ("repurchase", "week", False),
     "cn.holdertrade": ("stk_holdertrade", "week", False), "cn.unlock": ("share_float", "week", True),
     "cn.index_daily": ("index_daily", "symbol", False), "cb.basic": ("cb_basic", "snapshot", False), "cb.daily": ("cb_daily", "day", False),
+    "cb.issue": ("cb_issue", "week", False), "cn.dividend": ("dividend", "day", False),
     "fut.cffex": ("fut_daily", "symbol", False),
 }
 DATE_COLUMN = {"day": "trade_date", "period": "end_date"}
@@ -226,13 +228,13 @@ class TushareReseller(Source):
         if kind == "index_months":
             return self._index_members(key)
         if kind == "day":
+            param, date_col = DAY_PARAM.get(table, ("trade_date", "trade_date"))
             try:
-                raw = self._query(api, {"trade_date": key}, paged)
+                raw = self._query(api, {param: key}, paged)
             except Truncated:
                 if api not in SLICE:
                     raise
-                raw = self._sliced_day(api, {"trade_date": key})
-            date_col = "trade_date"
+                raw = self._sliced_day(api, {param: key})
         elif kind == "period":
             raw = self._query(api, {"period": key}, paged)
             date_col = "end_date"

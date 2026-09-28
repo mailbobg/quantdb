@@ -108,10 +108,9 @@ def main(argv=None):
     elif a.cmd == "refresh":
         rec = Recorder(store, report=_report)
         kw = {"start": a.start, "end": a.end, "limit": a.limit, "sources": a.source, "symbols": a.symbols.split(",") if a.symbols else None, "workers": a.workers}
-        if a.table:
-            rec.refresh(a.table, **kw)
-        else:
-            rec.refresh_all(namespace=a.namespace, **kw)
+        summaries = [rec.refresh(a.table, **kw)] if a.table else (rec.refresh_all(namespace=a.namespace, **kw) or [])
+        if any(s.get("failed") for s in summaries):
+            sys.exit(2)  # partial: some keys failed (their FAIL lines are on stderr); callers must not treat this as complete
     elif a.cmd == "sql":
         print(store.sql(a.query).to_string(index=False))
     elif a.cmd == "import-legacy":

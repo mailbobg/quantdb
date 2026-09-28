@@ -134,34 +134,34 @@ def test_dividend_days_are_keyed_by_ex_date_and_issue_weeks_by_announcement(monk
     assert src.main.calls[-1][1] == {"start_date": "20250602", "end_date": "20250608"} and issue["date"].iloc[0] == pd.Timestamp("2025-06-03") and issue["symbol"].iloc[0] == "113050.SH"
 
 
-def test_a_full_last_page_with_no_more_is_truncated(monkeypatch):
-    """Since 2026-09-23 the REST server caps a day at the page size and reports count == rows, has_more false."""
+def test_a_full_last_page_with_no_more_is_probed_then_sliced(monkeypatch):
+    """Since 2026-09-23 the REST server caps a day at the page size and reports count == rows, has_more false:
+    the next page is asked for anyway; when it is empty a sliceable interface is cut off, a non-sliceable one
+    keeps its rows, and a server whose next page does hold rows is simply paged on."""
     class Reply:
         status_code = 200
         text = ""
 
-        def __init__(self, n):
-            self.n = n
+        def __init__(self, n, count=None):
+            self.n, self.count = n, count
 
         def json(self):
-            return {"code": 0, "data": {"fields": ["ts_code", "x"], "items": [["600000.SH", 1]] * self.n, "has_more": False, "count": self.n}}
+            return {"code": 0, "data": {"fields": ["ts_code", "x"], "items": [["600000.SH", 1]] * self.n, "has_more": False, "count": self.count or self.n}}
 
         def raise_for_status(self):
             pass
 
-    class Session:
-        headers = {}
-
-        def get(self, url, params, timeout):
-            return Reply(params["limit"] if params["offset"] == 0 else 0)
-
     monkeypatch.setattr(tr.time, "sleep", lambda s: None)
-    main = tr._Main.__new__(tr._Main)
-    main.session, main.base, main.last, main.limits = Session(), "http://x", 0.0, {"daily": 50}
     import pytest
 
-    with pytest.raises(tr.Truncated):
-        main.query("daily", {"trade_date": "20260928"})
-    main.limits["daily"] = 200  # a day smaller than the page is complete
-    Session.get = lambda self, url, params, timeout: Reply(120 if params["offset"] == 0 else 0)
-    assert len(main.query("daily", {"trade_date": "20260928"})) == 120
+    def main_with(pages):
+        main = tr._Main.__new__(tr._Main)
+        main.session = type("S", (), {"headers": {}, "get": lambda self, url, params, timeout: Reply(pages.get(params["offset"], 0))})()
+        main.base, main.last, main.limits = "http://x", 0.0, {"daily": 50, "margin_detail": 50}
+        return main
+
+    with pytest.raises(tr.Truncated):  # full page, empty successor, sliceable: cut off
+        main_with({0: 50}).query("daily", {"trade_date": "20260928"})
+    assert len(main_with({0: 50}).query("margin_detail", {"trade_date": "20260928"})) == 50  # not sliceable: best effort
+    assert len(main_with({0: 50, 50: 30}).query("daily", {"trade_date": "20260928"})) == 80  # the server lied about has_more: paged on
+    assert len(main_with({0: 20}).query("daily", {"trade_date": "20260928"})) == 20  # a short day is complete

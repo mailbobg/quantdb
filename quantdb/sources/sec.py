@@ -90,6 +90,9 @@ class Sec(Source):
         return parse_eps_concept(reply.json(), symbol)
 
 
+TICKER_RE = r"[A-Z][A-Z.\-]{0,5}"  # a US listing symbol as EDGAR and Yahoo print it
+
+
 def parse_spinoff_hits(hits):
     """One row per CIK at its first filing from EDGAR full-text hits: ``date`` = file date, ``symbol`` = the ticker
     EDGAR prints in the display name (empty when the filer is not listed today), plus cik and name."""
@@ -102,7 +105,7 @@ def parse_spinoff_hits(hits):
         ciks = source.get("ciks") or []
         if not ciks or not source.get("file_date"):
             continue
-        ticker = re.search(r"\(([A-Z][A-Z.\-]{0,5})(?:,[^)]*)?\)\s*\(CIK", name)
+        ticker = re.search(rf"\(({TICKER_RE})(?:,[^)]*)?\)\s*\(CIK", name)
         rows.append({"cik": ciks[0], "name": re.sub(r"\s*\([^)]*\)\s*", " ", name).strip(), "file_date": source["file_date"], "ticker": ticker.group(1) if ticker else ""})
     if not rows:
         return EMPTY.copy()

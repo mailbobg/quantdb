@@ -195,7 +195,10 @@ class Recorder:
             return True
         if not len(frame):
             return False
-        if typical and len(frame) < 0.97 * typical:  # 0.9 let a 5000-row cap through against a 5,200-row market (2026-09-23)
+        # Market-wide tables hold within a few rows of yesterday, so 97% catches a server cap (5,000 of 5,200 slipped
+        # through 90% on 2026-09-23); small event tables (龙虎榜, 大宗) swing by a third from day to day.
+        floor = 0.97 if typical >= 1000 else 0.6
+        if typical and len(frame) < floor * typical:
             self.report({"table": table.name, "event": "partial", "key": key, "rows": len(frame), "typical": typical})
             return False
         return True

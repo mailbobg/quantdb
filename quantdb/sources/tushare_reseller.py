@@ -100,16 +100,21 @@ class _Main:
             data = body["data"]
             fields = fields or data["fields"]
             rows.extend(data["items"])
-            if not data.get("has_more") or not data["items"]:
+            if not data["items"]:
                 break
+            if not data.get("has_more") and len(data["items"]) < limit:
+                break
+            # A full page that claims to be the last is asked for a successor anyway: since 2026-09-23 the server
+            # caps a day at its page size and reports has_more false, count == rows. An empty successor means the
+            # server really stopped there.
             offset += len(data["items"])
         count = data.get("count")
         if isinstance(count, int) and count > len(rows):
             raise Truncated(f"{api} {params}: server holds {count} rows, returned {len(rows)}")
-        if len(data["items"]) >= limit and not data.get("has_more"):
-            # A last page exactly at the page size with "no more": since 2026-09-23 the server caps a day at its
-            # page size and reports count == rows, so a full final page is treated as cut off and sliced by code.
-            raise Truncated(f"{api} {params}: last page full ({len(rows)} rows) and the server claims no more")
+        if not data["items"] and rows and len(rows) % limit == 0 and api in SLICE:
+            # Every page was full and the probe came back empty: the server cut the day off. A sliceable interface is
+            # fetched by code list instead; the others keep what came back (the recorder's completeness gate decides).
+            raise Truncated(f"{api} {params}: {len(rows)} rows in full pages and the server stopped there")
         return pd.DataFrame(rows, columns=fields)
 
 

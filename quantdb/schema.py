@@ -115,6 +115,8 @@ register(Table("fut.cffex", "symbol", ("tushare",), "CFFEX futures contracts dai
 # ---- US ------------------------------------------------------------------------------------------------------
 register(Table("us.form4", "snapshot", ("sec",), "SEC Form 4 open-market insider transactions (quarterly bulk data sets, 2017+).",
                {"filed": "filing date", "trans_date": "", "trans_code": "P buy / S sell", "shares": "", "price": "", "value": "", "relationship": "officer/director/10% owner"}))
+register(Table("us.spinoffs", "snapshot", ("sec",), "Spin-off registrations: Form 10-12B filers whose filing mentions a spin-off (EDGAR full-text search, 2008+), one row per company at its first filing; ticker from the filer's current listing when it has one.",
+               {"cik": "", "name": "", "file_date": "first 10-12B filing", "ticker": "current ticker or empty"}, date_field="file_date"))
 register(Table("us.eps_xbrl", "symbol", ("sec",), "Quarterly diluted EPS from SEC XBRL companyconcept, dated by the first filing that reported the quarter.",
                {"end": "quarter end", "filed": "first filing date", "eps": "diluted EPS", "form": "10-Q/10-K"}, universe="us.all"))
 register(Table("us.daily", "symbol", ("openbb",), "US equity daily bars (OpenBB → yfinance), unadjusted OHLCV.", {"open": "", "high": "", "low": "", "close": "", "volume": ""}, universe="us.all"))

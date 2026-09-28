@@ -24,7 +24,7 @@ class Sec(Source):
         self._ciks = None
 
     def tables(self):
-        return ["us.form4", "us.eps_xbrl"]
+        return ["us.form4", "us.eps_xbrl", "us.spinoffs"]
 
     def _quarters(self):
         today = date.today()
@@ -37,7 +37,29 @@ class Sec(Source):
     def fetch(self, table, key):
         if table == "us.form4":
             return self._form4()
+        if table == "us.spinoffs":
+            return self._spinoffs()
         return self._eps(key)
+
+    def _spinoffs(self):
+        """Form 10-12B filers mentioning a spin-off, one EDGAR full-text query per quarter (a query returns at most
+        100 hits and paging is unreliable), from 2008 to today."""
+        import time
+
+        hits = []
+        for quarter in pd.period_range("2008Q1", pd.Timestamp.today().to_period("Q"), freq="Q"):
+            start, end = quarter.start_time.date(), min(quarter.end_time, pd.Timestamp.today()).date()
+            body = retry(lambda: requests.get("https://efts.sec.gov/LATEST/search-index", headers=self.headers, timeout=60,
+                                              params={"q": '"spin-off"', "forms": "10-12B", "dateRange": "custom", "startdt": str(start), "enddt": str(end)}).json())
+            hits.extend(body.get("hits", {}).get("hits", []))
+            time.sleep(0.3)
+        frame = parse_spinoff_hits(hits)
+        if frame.empty:
+            return frame
+        self._cik(" ")  # loads the ticker map
+        by_cik = {cik: ticker for ticker, cik in self._ciks.items()}
+        frame["ticker"] = frame["ticker"].where(frame["ticker"] != "", frame["cik"].map(by_cik).fillna(""))
+        return frame
 
     def _form4(self):
         frames = []
@@ -66,6 +88,28 @@ class Sec(Source):
         if reply.status_code != 200:
             return EMPTY.copy()
         return parse_eps_concept(reply.json(), symbol)
+
+
+def parse_spinoff_hits(hits):
+    """One row per CIK at its first filing from EDGAR full-text hits: ``date`` = file date, ``symbol`` = the ticker
+    EDGAR prints in the display name (empty when the filer is not listed today), plus cik and name."""
+    import re
+
+    rows = []
+    for hit in hits:
+        source = hit.get("_source") or {}
+        name = (source.get("display_names") or [""])[0]
+        ciks = source.get("ciks") or []
+        if not ciks or not source.get("file_date"):
+            continue
+        ticker = re.search(r"\(([A-Z][A-Z.\-]{0,5})(?:,[^)]*)?\)\s*\(CIK", name)
+        rows.append({"cik": ciks[0], "name": re.sub(r"\s*\([^)]*\)\s*", " ", name).strip(), "file_date": source["file_date"], "ticker": ticker.group(1) if ticker else ""})
+    if not rows:
+        return EMPTY.copy()
+    frame = pd.DataFrame(rows).sort_values("file_date", kind="stable").drop_duplicates("cik", keep="first")
+    frame["date"] = pd.to_datetime(frame["file_date"])
+    frame["symbol"] = frame["ticker"].where(frame["ticker"] != "", "CIK" + frame["cik"])
+    return frame[["date", "symbol", "cik", "name", "file_date", "ticker"]].reset_index(drop=True)
 
 
 def parse_form4(open_member, quarter):

@@ -195,7 +195,7 @@ class Recorder:
             return True
         if not len(frame):
             return False
-        if typical and len(frame) < 0.9 * typical:
+        if typical and len(frame) < 0.97 * typical:  # 0.9 let a 5000-row cap through against a 5,200-row market (2026-09-23)
             self.report({"table": table.name, "event": "partial", "key": key, "rows": len(frame), "typical": typical})
             return False
         return True

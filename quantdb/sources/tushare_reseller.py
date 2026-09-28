@@ -106,6 +106,10 @@ class _Main:
         count = data.get("count")
         if isinstance(count, int) and count > len(rows):
             raise Truncated(f"{api} {params}: server holds {count} rows, returned {len(rows)}")
+        if len(data["items"]) >= limit and not data.get("has_more"):
+            # A last page exactly at the page size with "no more": since 2026-09-23 the server caps a day at its
+            # page size and reports count == rows, so a full final page is treated as cut off and sliced by code.
+            raise Truncated(f"{api} {params}: last page full ({len(rows)} rows) and the server claims no more")
         return pd.DataFrame(rows, columns=fields)
 
 
